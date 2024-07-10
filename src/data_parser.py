@@ -1,121 +1,64 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Parsing the Data
-# The data set is available in a JSON format, in both original and pre-processed formats. Since my needs are different from that of the original authors, I'll be using the original data. The data is organised as follows:
-# - `data{index}`
-#   - **petri_net**: A compound matrix $[I; O; M_0]$ representing the Petri Net; for a Petri Net with $N$ transitions, the compound matrix will have a length of $N*2 + 1$.
-#   - **arr_vlist**: The reachable markings of this Petri Net.
-#   - **arr_edge**: The edges (source, destination) for the reachable markings.
-#   - **arr_tranidx**: The transition that fired, leading to the creation of a new marking.
-#   - **spn_labda**: The $\lambda$ (average firing rate) of the transition.
-#   - **spn_steadyprob**: The steady probability distribution of the Petri Net.
-#   - **spn_markdens**: The token probability density function of the Petri Net.
-#   - **spn_mu**: The average number of tokens in the network in the steady state.
-# 
-# For my purposes, only the first four data points are of interest, so I'll focus on extracting them. These correspond to the *Petri Net* and the *Reachability Graph*.
-
-# ## Imports
-# Due to the size of the files and the number of examples, it is more efficient to iterate through the values and build individual values. Python's standard JSON module is not adequate for this because it has to read the entire file before parsing, which is wasteful. Instead, `ijson` offers a steaming alternative, which is what I will be using.
-
-# In[1]:
-
-
 import json
-import json_stream
 import numpy
 from pathlib import Path
-
-
-# ### Typing Information
-# Since I don't like to guess the return of a function based on its name, typing information is going to be used.
-
-# In[2]:
-
-
 from typing import Iterable, Dict
 
-
-# # Reading the Data
-# The data is already arranged in a readable format, which means that we simply have to parse the JSON structure.
-# ## The First Solution: Default Python Module
-# Python offers a JSON decoder/encoder in its standard library, and it might prove sufficient for our needs. The only issue with it, at first, is that it loads the entire file into memory before reading, which might slow down the process considerably for some of the larger files.
-
-# In[3]:
-
-
-def get_data_dict_blocking(file: Path) -> Dict:
-    with open(file) as source:
-        return json.load(source)
-
-
-# ### Partial Solution: Asynchronous Reading
-# Python's `asyncio` module offers high-level operations for asynchronous operations, particularly geared towards IO, which is exactly what I am doing. This does not solve the entire file still needs to be loaded into memory and then parsed, which is still a slow operation, considering that no other concurrent work is going to happen at the same time.
-
-# In[4]:
-
-
-async def get_data_dic_async(file: Path) -> Dict:
-    with open(file) as source:
-        return json.load(source)
-
-
-# ## A Second Attempt: Chunked Reading
-# Since blocking the entire process while reading and decoding the file is not ideal, iterating over the data, decoding item by item, and converting them concurrently should provide a reasonable performance improvement.
-# 
-# The `json_stream` library offers this feature transparently, although we do need to pay attention due to its iterator-based nature. We can only read the file once, and we need to store the results to use them. This is not too problematic for us since multiple conversions are not needed.
-
-# In[5]:
-
-
-def get_data_dict_stream(file: Path) -> Dict:
-    with open(file) as source:
-        return json_stream.load(source)
-
-
-# ### The Third Solution: Improving the data
-# The original data is a single giant JSON list, which makes decoding expensive. A simple solution is to simply reformat the data, so that each line has a single JSON element, eliminating the list. This way, I can read the data in a streaming fashion without any weird tricks.
-
-# In[6]:
+# This modules assumes that the files being used have the following structure:
+# petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are columns, while rows are places.
+# arr_vlist: The set of markings on the reachability graph.
+# arr_edge: The edges for the reachability graph.
+# arr_tranidx: The transition that fired to generate the new marking.
+# spn_labda: The lambda (average firing rate) corresponding to each arc of the reachable marking graph.
+# spn_steadypro: The steady state probability.
+# spn_markdens: The token probability density function.
+# spn_mu: The average number of tokens.
+#
+# The original data is available in https://github.com/netlearningteam/SPN-Benchmark-DS
+# Converted from a giant list into one JSON element per line using the command `jq -c '.[]' file`.
 
 
 def get_data_line_iterator(file: Path) -> Iterable[Dict]:
+    """Returns a a generator that yields Dicts containing Petri Nets. Assumes
+    the JSON file has the following keys for each element:
+        petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are columns, while rows are places.
+        arr_vlist: The set of markings on the reachability graph.
+        arr_edge: The edges for the reachability graph.
+        arr_tranidx: The transition that fired to generate the new marking.
+    This method assumes that the file has one JSON element per line.
+    """
     with open(file, 'rb') as source:
         for line in source:
             yield json.loads(line)
 
 
-# # Converting the Data
-# The data is read as a bunch of Python lists, which is not adequate for feeding into Neural Networks. For that end, I have to provide functions to convert this data into Numpy arrays, which are then trivially converted into PyTorch/TensorFlow Tensors.
-# Additionally, I have to convert the Petri Net into a graph, so let's start with that.
-
-# In[7]:
-
-
 def get_petri_graph(pn: numpy.array):
+    """Given a Petri Net generate its graph representation.
+        Inputs:
+            pn: A Petri Net represented as a compound matrix [A-, A+, M_0]
+        Outputs:
+            A 4-tuple containing:
+                places: list
+                transitions: list
+                pt_edges: place -> transition pairs
+                tp_edges: transition -> places pairs
+    """
     num_places, num_transitions = pn.shape
     # The number of transitions is (columns-1)/2, so we can simply round down.
     num_transitions = num_transitions // 2
     places = list(range(num_places))
     transitions = (list(range(num_places, num_places+num_transitions)))
 
-    # Find the edges
     # place -> transition
+    # Find the edges and correct indices
     pt_edges = numpy.argwhere(pn[:, 0:num_transitions])
-    # Correct the indices
     pt_edges += numpy.array([0, num_places])
     # transition -> place
+    # Find the edges, correct indices and swap columns
     tp_edges = numpy.argwhere(pn[:, num_transitions:-1])
-    # Correct the indices and swap columns
     tp_edges += numpy.array([0, num_places])
     tp_edges[:, [0, 1]] = tp_edges[:, [1, 0]]
 
     return (places, transitions, pt_edges, tp_edges)
-
-
-# With this, I can create both homogeneous graphs and heterogeneous; the latter are probably more adequate, given that there is a real distinction between places and transitions in the net, and their links also have a different meaning. With this done, we can now convert the rest of the data.
-
-# In[9]:
 
 
 def get_petri_nets(source: Iterable) -> Iterable:

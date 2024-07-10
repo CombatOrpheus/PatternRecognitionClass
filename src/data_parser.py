@@ -102,15 +102,20 @@ def get_petri_graph(pn: numpy.array):
     # Find the edges
     # place -> transition
     pt_edges = numpy.argwhere(pn[:, 0:num_transitions])
+    # Correct the indices
+    pt_edges += numpy.array([0, num_places])
     # transition -> place
     tp_edges = numpy.argwhere(pn[:, num_transitions:-1])
+    # Correct the indices and swap columns
+    tp_edges += numpy.array([0, num_places])
+    tp_edges[:, [0, 1]] = tp_edges[:, [1, 0]]
 
     return (places, transitions, pt_edges, tp_edges)
 
 
 # With this, I can create both homogeneous graphs and heterogeneous; the latter are probably more adequate, given that there is a real distinction between places and transitions in the net, and their links also have a different meaning. With this done, we can now convert the rest of the data.
 
-# In[8]:
+# In[9]:
 
 
 def get_petri_nets(source: Iterable) -> Iterable:
@@ -119,5 +124,7 @@ def get_petri_nets(source: Iterable) -> Iterable:
         reachable_markings = numpy.array(data['arr_vlist'])
         edges = numpy.array(data['arr_edge'])
         fired_transitions = numpy.array(data['arr_tranidx'])
-        yield (pn, reachable_markings, edges, fired_transitions)
+        yield (get_petri_graph(pn), (reachable_markings, edges, fired_transitions))
 
+
+# Returning two tuples of values is not great, but it could be worse. This is sufficient for my needs at the moment and should be reasonably efficient.

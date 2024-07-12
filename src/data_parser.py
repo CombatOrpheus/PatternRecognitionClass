@@ -36,11 +36,13 @@ def get_petri_graph(pn: numpy.array):
         Inputs:
             pn: A Petri Net represented as a compound matrix [A-, A+, M_0]
         Outputs:
-            A 4-tuple containing:
+            A 5-tuple containing:
                 places: list
                 transitions: list
                 pt_edges: place -> transition pairs
                 tp_edges: transition -> places pairs
+                m0: initial marking of the Petri Net
+                A: Petri Net incidence matrix (A_in - A_out)
     """
     num_places, num_transitions = pn.shape
     # The number of transitions is (columns-1)/2, so we can simply round down.
@@ -50,24 +52,33 @@ def get_petri_graph(pn: numpy.array):
 
     # place -> transition
     # Find the edges and correct indices
-    pt_edges = numpy.argwhere(pn[:, 0:num_transitions])
+    A_in = pn[:, 0:num_transitions]
+    pt_edges = numpy.argwhere(A_in)
     pt_edges += numpy.array([0, num_places])
+
     # transition -> place
     # Find the edges, correct indices and swap columns
-    tp_edges = numpy.argwhere(pn[:, num_transitions:-1])
+    A_out = pn[:, num_transitions:-1]
+    tp_edges = numpy.argwhere(A_out)
     tp_edges += numpy.array([0, num_places])
     tp_edges[:, [0, 1]] = tp_edges[:, [1, 0]]
 
-    return (places, transitions, pt_edges, tp_edges)
+    return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_in - A_out)
 
 
-def get_petri_nets(source: Iterable) -> Iterable:
+def get_petri_nets(source_file: Path) -> Iterable:
+    """Given a file path, return an iterator that yields the following tuple:
+        ((places, transitions, pt_edges, tp_edges, initial marking, A),
+        (reachable_marking, edges, fired_transitions))
+    Inputs:
+        source_file: A valid Path
+    Outputs:
+        An iterator that yields the previously described values
+    """
+    source = get_data_line_iterator(source_file)
     for data in source:
         pn = numpy.array(data['petri_net'])
         reachable_markings = numpy.array(data['arr_vlist'])
         edges = numpy.array(data['arr_edge'])
-        fired_transitions = numpy.array(data['arr_tranidx'])
-        yield (get_petri_graph(pn), (reachable_markings, edges, fired_transitions))
-
-
-# Returning two tuples of values is not great, but it could be worse. This is sufficient for my needs at the moment and should be reasonably efficient.
+        fired = numpy.array(data['arr_tranidx'])
+        yield (get_petri_graph(pn), (reachable_markings, edges, fired))

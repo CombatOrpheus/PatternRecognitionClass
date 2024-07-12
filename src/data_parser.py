@@ -2,6 +2,7 @@ import json
 import numpy
 from pathlib import Path
 from typing import Iterable, Dict
+from torch_geometric.data import Data, HeteroData
 
 # This modules assumes that the files being used have the following structure:
 # petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are columns, while rows are places.
@@ -37,12 +38,12 @@ def get_petri_graph(pn: numpy.array):
             pn: A Petri Net represented as a compound matrix [A-, A+, M_0]
         Outputs:
             A 5-tuple containing:
-                places: list
-                transitions: list
-                pt_edges: place -> transition pairs
-                tp_edges: transition -> places pairs
-                m0: initial marking of the Petri Net
-                A: Petri Net incidence matrix (A_in - A_out)
+                The list of places
+                The list of transitions
+                Place -> transition pairs
+                Transition -> places pairs
+                Initial marking of the Petri Net
+                Petri Net incidence matrix (A_in - A_out)
     """
     num_places, num_transitions = pn.shape
     # The number of transitions is (columns-1)/2, so we can simply round down.

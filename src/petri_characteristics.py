@@ -3,15 +3,21 @@ from typing import List
 
 
 def is_safe(reachability: numpy.array) -> bool:
-    return numpy.all(reachability <= 0)
+    return numpy.all(reachability <= 1)
 
 
 def is_strictly_conservative(reachability: numpy.array) -> bool:
+    """Determine if the number of tokens in the Petri Net remains constant for
+    all markings.
+    """
     sums = numpy.sum(reachability, axis=1)
     return numpy.all(sums[:, 0] == sums)
 
 
-def is_conservative(reachability: numpy.array) -> bool:
+def is_conservative(reachability: numpy.array) -> numpy.array:
+    """If the Petri Net is convservative `with respect to a weigthing vector`,
+    return this weighting vector; otherwise, return an empty vector.
+    """
     pass
 
 

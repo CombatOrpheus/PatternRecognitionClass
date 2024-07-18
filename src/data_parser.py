@@ -78,11 +78,12 @@ def get_data(source_file: Path) -> Iterable:
     """
     source = get_data_line_iterator(source_file)
     for data in source:
-        pn = numpy.array(data['petri_net'])
-        reachable_markings = numpy.array(data['arr_vlist'])
-        edges = numpy.array(data['arr_edge'])
-        fired = numpy.array(data['arr_tranidx'])
-        yield (get_petri_graph(pn), (reachable_markings, edges, fired))
+        elements = list(data.values())
+        petri_net = numpy.array(elements[0])
+        reachability_graph = list(map(numpy.array, elements[1:-1]))
+        spn_mu = elements[-1]
+        yield get_petri_graph(petri_net), reachability_graph, spn_mu
+        
 
 
 def get_petri_nets(source_file: Path) -> Iterable:
@@ -94,11 +95,5 @@ def get_petri_nets(source_file: Path) -> Iterable:
 def get_reachability_graphs(source_file: Path) -> Iterable:
     source = get_data_line_iterator(source_file)
     for elem in source:
-        data = [
-            elem['arr_vlist'],
-            elem['arr_edge'],
-            elem['spn_labda'],
-            elem['spn_steadypro'],
-            elem['spn_markdens']
-            ]
+        data = list(elem.values())[1:-1]
         yield list(map(np.array, data)), elem['spn_mu']

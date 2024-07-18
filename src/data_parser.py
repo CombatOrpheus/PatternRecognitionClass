@@ -67,7 +67,7 @@ def get_petri_graph(pn: numpy.array):
     return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_in - A_out)
 
 
-def get_petri_nets(source_file: Path) -> Iterable:
+def get_data(source_file: Path) -> Iterable:
     """Given a file path, return an iterator that yields the following tuple:
         ((places, transitions, pt_edges, tp_edges, initial marking, A),
         (reachable_marking, edges, fired_transitions))
@@ -83,3 +83,22 @@ def get_petri_nets(source_file: Path) -> Iterable:
         edges = numpy.array(data['arr_edge'])
         fired = numpy.array(data['arr_tranidx'])
         yield (get_petri_graph(pn), (reachable_markings, edges, fired))
+
+
+def get_petri_nets(source_file: Path) -> Iterable:
+    source = get_data_line_iterator(source_file)
+    nets = (numpy.array(net['petri_net']) for net in source)
+    return map(get_petri_graph, nets)
+
+
+def get_reachability_graphs(source_file: Path) -> Iterable:
+    source = get_data_line_iterator(source_file)
+    for elem in source:
+        data = [
+            elem['arr_vlist'],
+            elem['arr_edge'],
+            elem['spn_labda'],
+            elem['spn_steadypro'],
+            elem['spn_markdens']
+            ]
+        yield list(map(np.array, data)), elem['spn_mu']

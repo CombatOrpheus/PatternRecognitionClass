@@ -96,4 +96,4 @@ def get_reachability_graphs(source_file: Path) -> Iterable:
     source = get_data_line_iterator(source_file)
     for elem in source:
         data = list(elem.values())[1:-1]
-        yield list(map(np.array, data)), elem['spn_mu']
+        yield list(map(numpy.array, data)), elem['spn_mu']

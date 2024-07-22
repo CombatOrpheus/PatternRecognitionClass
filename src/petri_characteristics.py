@@ -1,5 +1,6 @@
-import numpy
 from typing import List
+
+import numpy
 
 
 def is_safe(reachability: numpy.array) -> bool:

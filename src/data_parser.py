@@ -1,15 +1,17 @@
 import json
-import numpy
 from pathlib import Path
-from typing import Iterable, Dict
-from torch_geometric.data import Data, HeteroData
+from typing import Dict, Iterable
+
+import numpy
 
 # This modules assumes that the files being used have the following structure:
-# petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are columns, while rows are places.
+# petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are
+# columns, while rows are places.
 # arr_vlist: The set of markings on the reachability graph.
 # arr_edge: The edges for the reachability graph.
 # arr_tranidx: The transition that fired to generate the new marking.
-# spn_labda: The lambda (average firing rate) corresponding to each arc of the reachable marking graph.
+# spn_labda: The lambda (average firing rate) corresponding to each arc of the
+# reachable marking graph.
 # spn_steadypro: The steady state probability.
 # spn_markdens: The token probability density function.
 # spn_mu: The average number of tokens.
@@ -18,35 +20,22 @@ from torch_geometric.data import Data, HeteroData
 # Converted from a giant list into one JSON element per line using the command `jq -c '.[]' file`.
 
 
-def get_data_line_iterator(file: Path) -> Iterable[Dict]:
-    """Returns a a generator that yields Dicts containing Petri Nets. Assumes
-    the JSON file has the following keys for each element:
-        petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are columns, while rows are places.
-        arr_vlist: The set of markings on the reachability graph.
-        arr_edge: The edges for the reachability graph.
-        arr_tranidx: The transition that fired to generate the new marking.
-    This method assumes that the file has one JSON element per line.
-    """
-    with open(file, 'rb') as source:
-        for line in source:
-            yield json.loads(line)
-
-
 def get_petri_graph(pn: numpy.array):
-    """Given a Petri Net generate its graph representation.
-        Inputs:
-            pn: A Petri Net represented as a compound matrix [A-, A+, M_0]
-        Outputs:
-            A 5-tuple containing:
-                The list of places
-                The list of transitions
-                Place -> transition pairs
-                Transition -> places pairs
-                Initial marking of the Petri Net
-                Petri Net incidence matrix (A_in - A_out)
+    """Convert a Petri Net matrix into graph information
+    Parameters
+    ----------
+        pn: A Petri Net represented as a compound matrix [A-, A+, M_0]
+    Returns
+    -------
+        A 6-tuple containing:
+            The list of places
+            The list of transitions
+            Place -> transition pairs
+            Transition -> places pairs
+            Initial marking of the Petri Net
+            Petri Net incidence matrix (A_in - A_out)
     """
     num_places, num_transitions = pn.shape
-    # The number of transitions is (columns-1)/2, so we can simply round down.
     num_transitions = num_transitions // 2
     places = list(range(num_places))
     transitions = (list(range(num_places, num_places+num_transitions)))
@@ -68,32 +57,38 @@ def get_petri_graph(pn: numpy.array):
 
 
 def get_data(source_file: Path) -> Iterable:
-    """Given a file path, return an iterator that yields the following tuple:
-        ((places, transitions, pt_edges, tp_edges, initial marking, A),
-        (reachable_marking, edges, fired_transitions))
-    Inputs:
-        source_file: A valid Path
-    Outputs:
-        An iterator that yields the previously described values
     """
-    source = get_data_line_iterator(source_file)
-    for data in source:
-        elements = list(data.values())
-        petri_net = numpy.array(elements[0])
-        reachability_graph = list(map(numpy.array, elements[1:-1]))
-        spn_mu = elements[-1]
-        yield get_petri_graph(petri_net), reachability_graph, spn_mu
-        
+    Parameters
+    ----------
+        source_file: A valid Path
+    """
+    with open(source_file) as f:
+        for data in map(json.loads, f):
+            elements = list(data.values())
+            petri_net = numpy.array(elements[0])
+            reachability_graph = list(map(numpy.array, elements[1:-1]))
+            spn_mu = elements[-1]
+            yield get_petri_graph(petri_net), reachability_graph, spn_mu
 
 
 def get_petri_nets(source_file: Path) -> Iterable:
-    source = get_data_line_iterator(source_file)
-    nets = (numpy.array(net['petri_net']) for net in source)
-    return map(get_petri_graph, nets)
+    with open(source_file) as f:
+        for data in map(json.loads, f):
+            net = numpy.array(data['petri_net'])
+            yield get_petri_graph(net)
 
 
 def get_reachability_graphs(source_file: Path) -> Iterable:
-    source = get_data_line_iterator(source_file)
-    for elem in source:
-        data = list(elem.values())[1:-1]
-        yield list(map(numpy.array, data)), elem['spn_mu']
+    """Return an iterator with the reachability graphs for each Petri Net in
+    the source file.
+
+    Returns
+    -------
+        iterable: An iterable that yields the reachability graph information
+        and the true label for this graph.
+    """
+    with open(source_file) as f:
+        source = map(json.loads, f)
+        for elem in source:
+            data = list(elem.values())[1:-1]
+            yield list(map(numpy.array, data)), elem['spn_mu']

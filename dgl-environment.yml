@@ -1,0 +1,13 @@
+name: pattern-recognition-project-DGL
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python
+  - pytorch
+  - dgl
+  - optuna
+  - numpy
+  - ipython
+  - python-lsp-server
+

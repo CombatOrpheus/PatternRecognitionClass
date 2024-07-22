@@ -1,0 +1,16 @@
+name: pattern-recognition-project
+channels:
+  - defaults
+  - pytorch
+  - pyg
+  - conda-forge
+dependencies:
+  - python
+  - pytorch
+  - cpuonly
+  - pyg
+  - optuna
+  - numpy < 2
+  - ipython
+  - python-lsp-server
+

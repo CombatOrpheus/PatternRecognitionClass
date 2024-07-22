@@ -1,5 +1,0 @@
-json-stream         # Lazy reading of JSON files
-jupyterlab          # Better interface for notebooks
-pandas              # Table-like operations
-torch-geometric     # GNN framework
-torch               # PyTorch

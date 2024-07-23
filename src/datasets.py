@@ -6,6 +6,7 @@ import dgl
 import numpy as np
 import torch
 from dgl.data import DGLDataset
+from dgl.dataloading import GraphDataLoader
 
 from src.data_parser import get_reachability_graphs
 
@@ -24,9 +25,10 @@ class SPNDataset(DGLDataset):
 
         labels = []
         for graph, label in graphs:
-            g = dgl.graph((graph[1][:, 0], graph[1][:, 1]), num_nodes=len(graph[0]))
-            g.ndata['feat'] = torch.tensor(graph[0]).float()
+            g = dgl.graph((graph[1][:, 0], graph[1][:, 1]))
+            g.ndata['feat'] = torch.tensor(np.sum(graph[0], axis=1)).float()
             g.edata['feat'] = torch.tensor(graph[3][graph[2]]).view(-1, 1).float()
+            g = dgl.add_self_loop(g)
 
             self._graphs.append(g)
             labels.append(label)
@@ -49,3 +51,6 @@ class SPNDataset(DGLDataset):
     def __len__(self):
         """Number of graphs in the dataset"""
         return len(self._graphs)
+
+    def get_loader(self):
+        return GraphDataLoader(self, batch_size=32, drop_last=True, shuffle=True)

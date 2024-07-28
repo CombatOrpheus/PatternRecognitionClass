@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCN, MLP, ChebConv
 from torch.utils import scatter
 from torch_geometric.data import Batch
+from torch_geometric.nn import GCN, MLP, ChebConv
+
 
 class MLPReadout(nn.Module):
     """Layer for reading out the graph representation into the final regression

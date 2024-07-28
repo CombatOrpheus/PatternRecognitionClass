@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils import scatter
+from torch_geometric.utils import scatter
 from torch_geometric.data import Batch
 from torch_geometric.nn import GCN, MLP, ChebConv
 
@@ -12,7 +12,7 @@ class MLPReadout(nn.Module):
     """
 
     def __init__(self, input_dim, output_dim, L=2):
-        super.__init__()
+        super().__init__()
         layer_sizes = [input_dim//2**layer for layer in range(L)]
         layer_sizes.append(output_dim)
         self.layers = MLP(layer_sizes, bias=True)
@@ -27,16 +27,18 @@ class Petri_GCN(nn.Module):
                  hidden_features: int,
                  num_layers: int,
                  dropout: float,
-                 act: str,
-                 norm: str):
+                 act: str = 'relu',
+                 norm: str = None,
+                 readout_layers: int = 2):
+        super().__init__()
         self.GNN = GCN(
-            in_features=in_channels,
+            in_channels=in_channels,
             hidden_channels=hidden_features,
             num_layers=num_layers,
             dropout=dropout,
             act=act,
             norm=norm)
-        self.MLP_layer = MLPReadout(self.h_dim, 1)
+        self.MLP_layer = MLPReadout(hidden_features, 1)
         self.mae_loss = F.l1_loss
         self.mre_loss = F.mse_loss
 
@@ -54,15 +56,16 @@ class Petri_Cheb_GNN(nn.Module):
                  in_channels: int,
                  hidden_features: int,
                  num_layers: int,
-                 filter_size: int,
-                 norm: str,
+                 filter_size: int = 3,
+                 norm: str = 'sym',
                  readout_layers: int = 2):
+        super().__init__()
         layers = [ChebConv(in_channels, hidden_features, filter_size, norm)]
         layers.extend([
             ChebConv(hidden_features, hidden_features, filter_size, norm)
-            for _ in num_layers])
+            for _ in range(num_layers)])
 
-        self.layers = layers
+        self.layers = nn.ModuleList(layers)
         self.readout = MLPReadout(hidden_features, 1, readout_layers)
         self.mae_loss = F.l1_loss
         self.mre_loss = F.mse_loss
@@ -72,8 +75,11 @@ class Petri_Cheb_GNN(nn.Module):
         edge_index = data.edge_index
         edge_weight = data.edge_attr
 
-        x = self.layers(x, edge_index, edge_weight)
-        return self.readout(x)
+        y = self.layers[0](x, edge_index, edge_weight)
+        for layer in self.layers[1:]:
+            y = layer(y, edge_index, edge_weight)
+        y = self.readout(y)
+        return scatter(y, data.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
         return self.mae_loss(scores, targets)

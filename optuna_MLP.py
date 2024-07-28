@@ -17,8 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
-from torchvision import datasets
-from torchvision import transforms
+from torch_geometric.nn.models import MLP
 
 
 DEVICE = torch.device("cpu")
@@ -30,24 +29,18 @@ N_TRAIN_EXAMPLES = BATCHSIZE * 30
 N_VALID_EXAMPLES = BATCHSIZE * 10
 
 
-def define_model(trial):
-    # We optimize the number of layers, hidden units and dropout ratio in each layer.
-    n_layers = trial.suggest_int("n_layers", 5, 10)
-    layers = []
-
-    in_features = 28 * 28
-    for i in range(n_layers):
-        out_features = trial.suggest_int("n_units_l{}".format(i), 4, 128)
-        layers.append(nn.Linear(in_features, out_features))
-        layers.append(nn.ReLU())
-        p = trial.suggest_float("dropout_l{}".format(i), 0.2, 0.5)
-        layers.append(nn.Dropout(p))
-
-        in_features = out_features
-    layers.append(nn.Linear(in_features, CLASSES))
-    layers.append(nn.LogSoftmax(dim=1))
-
-    return nn.Sequential(*layers)
+def define_model(trial, num_features):
+    return MLP(
+        in_channels=num_features,
+        out_channels=1,
+        hidden_channels=trial.suggest_int("Hidden Features", 16, 256, log=True),
+        num_layers=trial.suggest_int("Number of Layers", 2, 20, log=True),
+        dropout=trial.suggest("Dropout", 0.1, 0.8, log=True),
+        act=trial.suggest_categorical(
+            "Activation Function",
+            ["relu", "leaky_relu", "softmin", "softmax", "linear"]),
+        bias=trial.suggest_categorical("Bias", [True, False])
+        )
 
 
 def get_data():
@@ -59,25 +52,27 @@ def objective(trial):
     model = define_model(trial).to(DEVICE)
 
     # Generate the optimizers.
-    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "RMSprop", "SGD"])
+    optimizer_name = trial.suggest_categorical(
+        "optimizer",
+        ["Adam", "RMSprop", "SGD"])
     lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
 
-    train_loader, valid_loader = get_mnist()
+    train_loader, valid_loader = get_data()
 
     # Training of the model.
     for epoch in range(EPOCHS):
         model.train()
-        for batch_idx, (data, target) in enumerate(train_loader):
+        for batch_idx, data in enumerate(train_loader):
             # Limiting training data for faster epochs.
             if batch_idx * BATCHSIZE >= N_TRAIN_EXAMPLES:
                 break
 
-            data, target = data.view(data.size(0), -1).to(DEVICE), target.to(DEVICE)
+            data, target = data.view(data.size(0), -1).to(DEVICE), data.y.to(DEVICE)
 
             optimizer.zero_grad()
             output = model(data)
-            loss = F.nll_loss(output, target)
+            loss = F.nll_loss(output, data.y)
             loss.backward()
             optimizer.step()
 

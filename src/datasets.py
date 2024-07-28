@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Iterable
 
 import numpy as np
-from torch import tensor
+from torch import as_tensor
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
@@ -19,10 +19,10 @@ def __to_data_reduced_features__(
         label: float
 ) -> Data:
     return Data(
-        x=tensor(np.sum(graph_info[0], axis=1)).view(-1, 1).float(),
-        edge_index=tensor(graph_info[1]).view(2, -1).long(),
-        edge_attr=tensor(graph_info[3][graph_info[2]]).float(),
-        y=tensor(label),
+        x=as_tensor(np.sum(graph_info[0], axis=1)).view(-1, 1).float(),
+        edge_index=as_tensor(graph_info[1]).view(2, -1).long(),
+        edge_attr=as_tensor(graph_info[3][graph_info[2]]).float(),
+        y=as_tensor(label),
         num_nodes=graph_info[0].shape[0])
 
 

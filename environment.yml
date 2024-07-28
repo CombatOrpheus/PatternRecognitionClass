@@ -1,16 +1,19 @@
-name: pattern-recognition-project
+name: pattern-recognition
 channels:
   - defaults
   - pytorch
   - pyg
   - conda-forge
 dependencies:
-  - python
+  - python < 3.12
   - pytorch
   - cpuonly
   - pyg
   - optuna
   - numpy < 2
   - ipython
+  - jupyterlab
+  - jupyter
+  - ipywidgets
   - python-lsp-server
 

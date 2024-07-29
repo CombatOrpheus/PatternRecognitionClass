@@ -1,0 +1,672 @@
+#LyX 2.4 created this file. For more info see https://www.lyx.org/
+\lyxformat 620
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass IEEEtran
+\begin_preamble
+\usepackage{cite}
+\end_preamble
+\use_default_options true
+\maintain_unincluded_children no
+\language british
+\language_package default
+\inputencoding utf8
+\fontencoding auto
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_roman_osf false
+\font_sans_osf false
+\font_typewriter_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\float_placement class
+\float_alignment class
+\paperfontsize default
+\spacing single
+\use_hyperref true
+\pdf_author "Gabriel Santos Oliveira"
+\pdf_bookmarks true
+\pdf_bookmarksnumbered false
+\pdf_bookmarksopen false
+\pdf_bookmarksopenlevel 1
+\pdf_breaklinks false
+\pdf_pdfborder false
+\pdf_colorlinks false
+\pdf_backref false
+\pdf_pdfusetitle true
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_formatted_ref 0
+\use_minted 0
+\use_lineno 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 2
+\papersides 1
+\paperpagestyle default
+\tablestyle default
+\tracking_changes false
+\output_changes false
+\change_bars false
+\postpone_fragile_content true
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\docbook_table_output 0
+\docbook_mathml_prefix 1
+\end_header
+
+\begin_body
+
+\begin_layout Title
+Statistical Comparison of GNN Models for SPN Metrics
+\end_layout
+
+\begin_layout Author
+Gabriel Oliveira
+\end_layout
+
+\begin_layout Abstract
+Stochastic Petri Nets are a commonly used modelling tool for description and evaluation of performance metrics on discrete systems.
+ The simplest metric that can be derived is the average number of tokens flowing in the network,
+ which represents amount of work done on average.
+ While this is not a complex procedure,
+ traditional machine learning and deep learning solutions perform poorly due to the information encoded in the graph structure.
+ GNNs have proven to be a viable tool for applications that hinge on graph-like data,
+ such as this problem.
+\end_layout
+
+\begin_layout Section*
+Introduction
+\end_layout
+
+\begin_layout Standard
+With the increasing complexity of deployed systems and the interconnection between systems,
+ modelling and simulation have proven valuable tools for studying,
+ evaluating and improving them.
+ One such tool commonly used for these tasks are Petri Nets:
+ originally developed by Karl Adam Petri,
+ and formally defined in his doctoral dissertation
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Petri1962"
+literal "false"
+
+\end_inset
+
+,
+ they have been continuously developed throughout the years and cemented itself as a tool for describing and studying concurrent,
+ distributed and discrete systems.
+ One of the limitations of Petri Nets was its lack of abstractions for dealing with time,
+ which led to the development of two extensions:
+ Timed Petri Nets and Stochastic Petri Nets;
+ Stochastic Petri Nets (SPNs),
+ in particular,
+ are useful in the study of systems with non-deterministic timing.
+\end_layout
+
+\begin_layout Standard
+The underlying abstraction of SPNs is the Markov Chain,
+ meaning that they are plagued by the same problems,
+ which range from state-space explosion to unsolvable systems;
+ this,
+ however,
+ has not stopped practitioners and researchers from using SPNs extensively.
+ One of the main applications of SPNs is in the analysis of performance characteristics of a system,
+ and they have been successfully used in the identification of bottlenecks in complex systems,
+ allowing for iterative improvements.
+ A number of authors has attempted to derive these performance metrics through machine learning and deep learning techniques,
+ but results were disappointing .
+ This was due to the graph structure of this reachability graph,
+ which contains important information on its edges and variable sizes,
+ characteristics that make it a poor fit for the fixed length expected from inputs in deep learning models.
+ GNNs provide a deep learning model that is aware of these graph structures and is capable of embedding their information into a feature vector.
+\end_layout
+
+\begin_layout Standard
+This work focuses on validating the quality of these GNN models for the 
+\begin_inset Quotes eld
+\end_inset
+
+simple
+\begin_inset Quotes erd
+\end_inset
+
+ task of computing the average number of tokens in an SPN,
+ given its reachability graph.
+ The rest of the paper is as follows,
+ section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Petri-Nets"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ provides an overview on the topic of Petri Nets and Stochastic Petri Nets,
+ and the challenges involved in using these models;
+ section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Related-Works"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ goes through some of the related works on this front,
+ considering both PNs and SPNs,
+ with a focus on deep learning models applied to these problems;
+ section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Model"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ presents the proposed models,
+ while section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Experiments"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ discusses the experiments,
+ the parameters and evaluation metrics used;
+ section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Discussion"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ discusses the results,
+ and;
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Conclusion"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ presents some closing remarks and plans for future research on this topic.
+\end_layout
+
+\begin_layout Section
+Petri Nets and Stochastic Petri Nets 
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Petri-Nets"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+A Petri Net is a graphical and mathematical model,
+ defined by a triple 
+\begin_inset Formula $N=(P,T,F)$
+\end_inset
+
+,
+ where 
+\begin_inset Formula $P=\{p_{1},p_{2},\dots,p_{i}\},\text{ }i\in\mathbb{Z}$
+\end_inset
+
+ is the set of places,
+ 
+\begin_inset Formula $T=\{t_{1},t_{2},\dots,t_{i}\},\text{ }i\in\mathbb{Z}$
+\end_inset
+
+ is the set of transitions,
+ and 
+\begin_inset Formula $F\subseteq(P\times T)\cup(T\times P)$
+\end_inset
+
+ is the set of arcs between elements in the net;
+ the Petri Net is a bipartite graph,
+ so there are no self-loops,
+ nor do elements of the same type connect to each other (places connect to transitions,
+ and transitions connect to places).
+ A marking represents the distribution of tokens (positive integers) in each place on the Petri Net;
+ transitions do not hold tokens.
+ Given a marking,
+ 
+\begin_inset Formula $\mu$
+\end_inset
+
+,
+ a transition is said to be 
+\begin_inset Quotes eld
+\end_inset
+
+enabled
+\begin_inset Quotes erd
+\end_inset
+
+ when the number of tokens in its inputs is greater than or equal to the number of tokens requested by the arc;
+ transitions fire as soon as they are enable,
+ consuming tokens from their inputs and producing tokens in their outputs.
+ Firing a transition is an atomic operation and,
+ if multiple transitions are enabled simultaneously,
+ they fire arbitrarily,
+ for Petri Nets do not have a concept of priority.
+\end_layout
+
+\begin_layout Standard
+Given a marking 
+\begin_inset Formula $\mu$
+\end_inset
+
+,
+ whenever a transition fires,
+ a new marking,
+ 
+\begin_inset Formula $\mu'$
+\end_inset
+
+ is generated,
+ possibly enabling other transitions,
+ which can fire and generate new markings.
+ The set of all possible firing sequences generates the 
+\emph on
+reachability graph
+\emph default
+ of this Petri Net.
+ This possibly infinite graph is used to verify certain characteristics of the modelled system
+\begin_inset CommandInset citation
+LatexCommand cite
+key "peterson81:_petri_net_theor_and_the"
+literal "false"
+
+\end_inset
+
+,
+ such as:
+\end_layout
+
+\begin_layout Itemize
+Conservation:
+ the number of tokens in the Petri Net is constant,
+ with respect to a weighting vector;
+\end_layout
+
+\begin_layout Itemize
+Reversibility:
+ given an initial marking 
+\begin_inset Formula $M_{0}$
+\end_inset
+
+ and a current making 
+\begin_inset Formula $\mu$
+\end_inset
+
+,
+ whether the initial marking is reachable from the current one;
+ 
+\end_layout
+
+\begin_layout Itemize
+Liveness (partially):
+ whether there is a marking 
+\begin_inset Formula $\mu$
+\end_inset
+
+ in which no transitions are enabled;
+\end_layout
+
+\begin_layout Subsection
+Stochastic Petri Nets
+\end_layout
+
+\begin_layout Standard
+A Stochastic Petri Net is defined by a tuple 
+\begin_inset Formula $SPN=(PN,\lambda)$
+\end_inset
+
+,
+ where 
+\begin_inset Formula $PN$
+\end_inset
+
+ is the previously defined Petri Net,
+ and 
+\begin_inset Formula $\lambda\in\mathbb{Z}$
+\end_inset
+
+ is the average firing rate of the transitions within this network;
+ the SPN follows the same rules as the Petri Net.
+ Whenever a transition fires,
+ it cannot fire again for a non-deterministic amount of time;
+ this delay is modelled by an exponential distribution and introduces the concept of time to the system,
+ which enables the derivation of performance metrics from the modelled system.
+\end_layout
+
+\begin_layout Standard
+The underlying abstraction of the SPN is the Markov Chain,
+ and,
+ for that reason,
+ only memoryless distributions (exponential and geometric) can be used for the firing rate of these transitions;
+ for systems with a mix of 
+\emph on
+immediate
+\emph default
+ and stochastic transitions,
+ Generalized Stochastic Petri Nets (GSPNs)
+\begin_inset CommandInset citation
+LatexCommand cite
+key "AjmoneMarsan1995"
+literal "false"
+
+\end_inset
+
+ are an option for modelling and analysis,
+ with little additional complexity.
+ For systems with 
+\emph on
+non-Markovian distributions
+\emph default
+,
+ choices are more limited:
+ 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "german00:_perfor_analy_commun_system"
+literal "false"
+
+\end_inset
+
+ is one of the few references on this subject,
+ with TimeNET
+\begin_inset CommandInset citation
+LatexCommand cite
+key "10.1007/978-3-319-66335-7_19"
+literal "false"
+
+\end_inset
+
+ being one of two programs capable of dealing with such models,
+ the other being SPNP
+\begin_inset CommandInset citation
+LatexCommand cite
+key "10.1007/3-540-46429-8_30"
+literal "false"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsection
+Challenges
+\end_layout
+
+\begin_layout Standard
+Although Petri Nets are a useful tool,
+ they suffer from the same challenges that plague modelling and simulation as a whole:
+ how detailed should the model be and how to interpret the results of the simulation.
+ Additionally,
+ due to the way the reachability graph is constructed (each time a transition fires,
+ a new state is created),
+ Petri Nets are prone to state-space explosion,
+ where even simple systems have an inordinate number of states.
+ There are several techniques that can be applied to either reduce the state-space or avoid an exhaustive search;
+ most extensions,
+ such as Continuous Petri Nets and Hierarchical Petri Nets,
+ and algebraic methods fall into the former category,
+ while targeted simulation and heuristic search methods compose the latter.
+ Stochastic Petri Nets suffer from the same issues,
+ while also bringing some new ones specific to Markov Chains,
+ such as systems that never reach a steady-state or that have no analytical solution.
+\end_layout
+
+\begin_layout Section
+Related Works
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Related-Works"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Most related works have focused on hybrid systems:
+ enhancing Petri Nets with deep learning techniques.
+ One such work is 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Saleh2023"
+literal "false"
+
+\end_inset
+
+,
+ wherein a Petri Net model of an offshore wind farm was used in conjunction with Reinforcement Learning techniques for predictive maintenance:
+ degradation metrics were generated by the operation of the Petri Net,
+ which were used to train a deep learning model to determine when to send maintenance teams.
+ Other examples include 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Vahidipour2015"
+literal "false"
+
+\end_inset
+
+,
+ where an adapting Petri Net model is proposed and tested on a scheduling problem,
+ and 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Drakaki2017"
+literal "false"
+
+\end_inset
+
+,
+ also a scheduling problem,
+ where a Petri Nets and reinforcement learning are used.
+ Works,
+ such as 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Lin2020,Shen2010"
+literal "false"
+
+\end_inset
+
+,
+ propose a deeper integration between deep learning models and Petri Nets,
+ using the latter to guide the construction of new ANNs and achieving interesting results.
+ Finally 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Wang2022a"
+literal "false"
+
+\end_inset
+
+ was one of the few works found that proposed using GNNs for Petri Net applications,
+ specifically for SPNs;
+ indeed,
+ the dataset used in this work was generated with the algorithm they proposed.
+\end_layout
+
+\begin_layout Standard
+There is a richer literature of Petri Nets as a modelling and simulation tool,
+ such as 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "mator20:_bottl_detec_cloud_comput_perfor_depen"
+literal "false"
+
+\end_inset
+
+,
+ where it was used to identify bottlenecks and evaluate the performance of cloud computing architectures,
+ and 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Drakaki2016"
+literal "false"
+
+\end_inset
+
+,
+ where Coloured Petri Nets were used for modelling and analysing the performance of an agent-based resource allocation algorithm.
+ Few works on this line have attempted to use non-recurrent models,
+ like MLPs and CNNs.
+\end_layout
+
+\begin_layout Section
+Model
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Model"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The proposed hybrid model is composed of a GNN,
+ with varying architectures,
+ and a MLP:
+ the GNN model learns a vector representation of the reachability graph and its features,
+ and produces a vector of features of the input graph;
+ this vector is then fed into the MLP model to generate the final output,
+ a scalar value,
+ in our case,
+ representing the average number of tokens in the SPN.
+ The GNN models were created with the PyGeometric library
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Fey/Lenssen/2019"
+literal "false"
+
+\end_inset
+
+,
+ which provides both ready-to-use models,
+ such as the GCN and MLP models used in this work,
+ and layer operators that can be composed into new neural networks,
+ which were used to create the remaining models,
+ which are discussed in the following section.
+\end_layout
+
+\begin_layout Section
+Experiments
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Experiments"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section
+Discussion
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Discussion"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section
+Conclusion
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Conclusion"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset bibtex
+LatexCommand bibtex
+btprint "btPrintCited"
+bibfiles "IEEEabrv,references"
+options "plain"
+encoding "default"
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document

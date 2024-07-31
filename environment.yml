@@ -10,7 +10,7 @@ dependencies:
   - cpuonly
   - pyg
   - optuna
-  - numpy < 2
+  - numpy
   - ipython
   - jupyterlab
   - jupyter

@@ -9,16 +9,18 @@ we here use a small subset of it.
 """
 
 import os
+from pathlib import Path
 
 import optuna
-from optuna.trial import TrialState
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
-from torch_geometric.nn.models import MLP
+from optuna.trial import TrialState
 
+from src.datasets import get_reachability_dataset
+from src.models import Petri_GCN
 
 DEVICE = torch.device("cpu")
 BATCHSIZE = 128
@@ -30,35 +32,50 @@ N_VALID_EXAMPLES = BATCHSIZE * 10
 
 
 def define_model(trial, num_features):
-    return MLP(
+    return Petri_GCN(
         in_channels=num_features,
-        out_channels=1,
-        hidden_channels=trial.suggest_int("Hidden Features", 16, 256, log=True),
-        num_layers=trial.suggest_int("Number of Layers", 2, 20, log=True),
-        dropout=trial.suggest("Dropout", 0.1, 0.8, log=True),
-        act=trial.suggest_categorical(
-            "Activation Function",
-            ["relu", "leaky_relu", "softmin", "softmax", "linear"]),
-        bias=trial.suggest_categorical("Bias", [True, False])
+        hidden_features=trial.suggest_int("Hidden Features", 16, 128, 2),
+        num_layers=trial.suggest_int("Number of GCN Layers", 2, 8),
+        dropout=trial.suggest_float("Dropout", 0.0, 0.6),
+        ################################################################
+        # act=trial.suggest_categorical(                               #
+        #     "Activation Function",                                   #
+        #     ["ReLU", "LeakyReLU", "Sigmoid", "Softmin", "Softmax"]), #
+        # norm=trial.suggest_categorical(                              #
+        #     "Normalization Function",                                #
+        #     ["GraphNorm", "LayerNorm", "BatchNorm"]),                #
+        ################################################################
+        readout_layers=trial.suggest_int("MLP Readout Layers", 2, 4)
         )
 
 
-def get_data():
-    pass
+def get_data(trial):
+    train_data = Path('Data/RandData_DS1_train_data.processed')
+    test_data = Path('Data/RandData_DS1_test_data.processed')
+
+    train_dataset = get_reachability_dataset(
+        train_data,
+        reduce_node_features=True,
+        batch_size=trial.suggest_int("Batch size", 32, 128, 16))
+    test_dataset = get_reachability_dataset(
+        test_data,
+        reduce_node_features=True,
+        batch_size=128)
+    return train_dataset, test_dataset
 
 
 def objective(trial):
+    train_loader, valid_loader = get_data(trial)
     # Generate the model.
-    model = define_model(trial).to(DEVICE)
+    model = define_model(trial, train_loader.num_features).to(DEVICE)
+    model = torch.compile(model, dynamic=True)
 
     # Generate the optimizers.
     optimizer_name = trial.suggest_categorical(
         "optimizer",
         ["Adam", "RMSprop", "SGD"])
-    lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
+    lr = trial.suggest_float("Learning Rate", 1e-5, 1e-1, log=True)
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
-
-    train_loader, valid_loader = get_data()
 
     # Training of the model.
     for epoch in range(EPOCHS):
@@ -68,42 +85,38 @@ def objective(trial):
             if batch_idx * BATCHSIZE >= N_TRAIN_EXAMPLES:
                 break
 
-            data, target = data.view(data.size(0), -1).to(DEVICE), data.y.to(DEVICE)
+            data, target = data, data.y
 
             optimizer.zero_grad()
-            output = model(data)
-            loss = F.nll_loss(output, data.y)
+            output = torch.flatten(model(data))
+            loss = F.l1_loss(output, target)
             loss.backward()
             optimizer.step()
 
         # Validation of the model.
         model.eval()
-        correct = 0
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(valid_loader):
+            for batch_idx, data in enumerate(valid_loader):
                 # Limiting validation data.
                 if batch_idx * BATCHSIZE >= N_VALID_EXAMPLES:
                     break
-                data, target = data.view(data.size(0), -1).to(DEVICE), target.to(DEVICE)
-                output = model(data)
-                # Get the index of the max log-probability.
-                pred = output.argmax(dim=1, keepdim=True)
-                correct += pred.eq(target.view_as(pred)).sum().item()
+                data, target = data, data.y
+                output = torch.flatten(model(data))
 
-        accuracy = correct / min(len(valid_loader.dataset), N_VALID_EXAMPLES)
+        error = F.l1_loss(output, data.y)
 
-        trial.report(accuracy, epoch)
+        trial.report(error, epoch)
 
         # Handle pruning based on the intermediate value.
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
 
-    return accuracy
+    return error
 
 
 if __name__ == "__main__":
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=100, timeout=600)
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=200, timeout=6000)
 
     pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
     complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])

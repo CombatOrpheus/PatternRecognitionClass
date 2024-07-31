@@ -662,9 +662,61 @@ nolink "false"
  in it's random configuration:
  the choice of this dataset was due to its reasonable size,
  containing 6000 examples,
- and its complexity;
- GNNs achieved better results in data generated following a grid-based organization,
- which comprises a small number of examples that are then augmented.
+ and its complexity,
+ since the number of features and states varies greatly when compared to the grid-based organization.
+\end_layout
+
+\begin_layout Standard
+There are three metrics of interest for these models:
+ MAE,
+ MSE and MRE.
+ The mean absolute error (MAE) is the average error between the predicted value,
+ 
+\begin_inset Formula $\hat{y}$
+\end_inset
+
+ and the actual value,
+ 
+\begin_inset Formula $y$
+\end_inset
+
+,
+ i.e.,
+ 
+\begin_inset Formula 
+\[
+\text{MAE}=\frac{1}{N}\sum_{i=1}^{N}\hat{y_{i}}-y_{i}
+\]
+
+\end_inset
+
+,
+ where 
+\begin_inset Formula $N$
+\end_inset
+
+ is the number of samples in the training set.
+ The mean relative error (MRE) is the ratio of the absolute error compared to the actual value,
+ expressed as a percentage:
+\begin_inset Formula 
+\[
+\text{MRE}=\frac{1}{N}\sum_{i=1}^{N}\frac{\hat{y_{i}}-y_{i}}{y_{i}}.
+\]
+
+\end_inset
+
+The mean squared error (MSE) is the average squared difference between the predicted value and the actual value.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\text{MSE}=\frac{1}{N}\sum_{i=1}^{N}(\hat{y_{i}}-\hat{y_{i}})^{2}.
+\]
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -673,14 +725,30 @@ placement document
 alignment document
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Optimizer Configuration
+\begin_inset CommandInset label
+LatexCommand label
+name "tab:Optimizer-Configuration"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \begin_inset Tabular
-<lyxtabular version="3" rows="5" columns="2">
-<features tabularvalignment="middle">
-<column alignment="center" valignment="top">
-<column alignment="center" valignment="top">
+<lyxtabular version="3" rows="7" columns="2">
+<features booktabs="true" tabularvalignment="middle">
+<column alignment="center" valignment="top" varwidth="true">
+<column alignment="center" valignment="top" varwidth="true">
 <row>
 <cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
 \begin_inset Text
@@ -762,7 +830,7 @@ Weight Decay
 </cell>
 </row>
 <row>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
 \begin_inset Text
 
 \begin_layout Plain Layout
@@ -771,11 +839,51 @@ Batch Size
 
 \end_inset
 </cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+64
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Epochs
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+100
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Loss Function
+\end_layout
+
+\end_inset
+</cell>
 <cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
 \begin_inset Text
 
 \begin_layout Plain Layout
-32
+MAE
 \end_layout
 
 \end_inset
@@ -786,13 +894,52 @@ Batch Size
 \end_inset
 
 
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Results are presented in Table 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "tab:Results"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+,
+ while a statistical comparison of the models is available in 
+\begin_inset CommandInset label
+LatexCommand label
+name "statistical-results."
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float table
+placement document
+alignment document
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
 \begin_inset Caption Standard
 
 \begin_layout Plain Layout
-Optimizer Configuration
+Results
 \begin_inset CommandInset label
 LatexCommand label
-name "tab:Optimizer-Configuration"
+name "tab:Results"
 
 \end_inset
 
@@ -801,6 +948,10 @@ name "tab:Optimizer-Configuration"
 
 \end_inset
 
+
+\end_layout
+
+\begin_layout Plain Layout
 
 \end_layout
 

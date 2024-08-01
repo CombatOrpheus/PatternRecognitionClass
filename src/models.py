@@ -1,9 +1,8 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.utils import scatter
 from torch_geometric.data import Batch
 from torch_geometric.nn import GCN, MLP, ChebConv
+from torch_geometric.utils import scatter
 
 
 class MLPReadout(nn.Module):
@@ -26,7 +25,7 @@ class Petri_GCN(nn.Module):
                  in_channels: int,
                  hidden_features: int,
                  num_layers: int,
-                 dropout: float,
+                 dropout: float = .0,
                  act: str = 'relu',
                  norm: str = None,
                  readout_layers: int = 2):

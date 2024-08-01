@@ -1,13 +1,3 @@
-"""
-Optuna example that optimizes multi-layer perceptrons using PyTorch.
-
-In this example, we optimize the validation accuracy of fashion product recognition using
-PyTorch and FashionMNIST. We optimize the neural network architecture as well as the optimizer
-configuration. As it is too time consuming to use the whole FashionMNIST dataset,
-we here use a small subset of it.
-
-"""
-
 import os
 from pathlib import Path
 
@@ -18,25 +8,23 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
 from optuna.trial import TrialState
+from tqdm import tqdm, trange
 
 from src.datasets import get_reachability_dataset
 from src.models import Petri_GCN
 
 DEVICE = torch.device("cpu")
-BATCHSIZE = 128
 CLASSES = 10
 DIR = os.getcwd()
-EPOCHS = 10
-N_TRAIN_EXAMPLES = BATCHSIZE * 30
-N_VALID_EXAMPLES = BATCHSIZE * 10
+EPOCHS = 100
 
 
 def define_model(trial, num_features):
     return Petri_GCN(
         in_channels=num_features,
-        hidden_features=trial.suggest_int("Hidden Features", 16, 128, 2),
-        num_layers=trial.suggest_int("Number of GCN Layers", 2, 8),
-        dropout=trial.suggest_float("Dropout", 0.0, 0.6),
+        hidden_features=trial.suggest_int("Hidden Features", 16, 64, step=2),
+        num_layers=trial.suggest_int("Number of GCN Layers", 2, 10),
+        dropout=trial.suggest_float("Dropout", 0.0, 0.2, step=1e-3),
         ################################################################
         # act=trial.suggest_categorical(                               #
         #     "Activation Function",                                   #
@@ -50,17 +38,17 @@ def define_model(trial, num_features):
 
 
 def get_data(trial):
-    train_data = Path('Data/RandData_DS1_train_data.processed')
-    test_data = Path('Data/RandData_DS1_test_data.processed')
+    train_data = Path('Data/RandData_DS2_train_data.processed')
+    test_data = Path('Data/RandData_DS2_test_data.processed')
 
     train_dataset = get_reachability_dataset(
         train_data,
         reduce_node_features=True,
-        batch_size=trial.suggest_int("Batch size", 32, 128, 16))
+        batch_size=trial.suggest_int("Batch size", 32, 128, step=16))
     test_dataset = get_reachability_dataset(
         test_data,
         reduce_node_features=True,
-        batch_size=128)
+        batch_size=64)
     return train_dataset, test_dataset
 
 
@@ -68,7 +56,6 @@ def objective(trial):
     train_loader, valid_loader = get_data(trial)
     # Generate the model.
     model = define_model(trial, train_loader.num_features).to(DEVICE)
-    model = torch.compile(model, dynamic=True)
 
     # Generate the optimizers.
     optimizer_name = trial.suggest_categorical(
@@ -78,40 +65,23 @@ def objective(trial):
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
 
     # Training of the model.
-    for epoch in range(EPOCHS):
-        model.train()
-        for batch_idx, data in enumerate(train_loader):
-            # Limiting training data for faster epochs.
-            if batch_idx * BATCHSIZE >= N_TRAIN_EXAMPLES:
-                break
-
-            data, target = data, data.y
-
+    model.train()
+    for epoch in trange(EPOCHS, leave=False, desc="Training loop"):
+        for graph in tqdm(train_loader, leave=False):
+            data, target = graph, graph.y
             optimizer.zero_grad()
             output = torch.flatten(model(data))
             loss = F.l1_loss(output, target)
             loss.backward()
             optimizer.step()
 
-        # Validation of the model.
-        model.eval()
-        with torch.no_grad():
-            for batch_idx, data in enumerate(valid_loader):
-                # Limiting validation data.
-                if batch_idx * BATCHSIZE >= N_VALID_EXAMPLES:
-                    break
-                data, target = data, data.y
-                output = torch.flatten(model(data))
-
-        error = F.l1_loss(output, data.y)
-
-        trial.report(error, epoch)
+        trial.report(loss, epoch)
 
         # Handle pruning based on the intermediate value.
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
 
-    return error
+    return loss
 
 
 if __name__ == "__main__":

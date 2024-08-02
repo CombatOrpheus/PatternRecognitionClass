@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Batch
-from torch_geometric.nn import GCN, MLP, ChebConv
+from torch_geometric.nn import GCN, MLP, ChebConv, GraphSAGE
 from torch_geometric.utils import scatter
 
 
@@ -14,10 +14,10 @@ class MLPReadout(nn.Module):
         super().__init__()
         layer_sizes = [input_dim//2**layer for layer in range(L)]
         layer_sizes.append(output_dim)
-        self.layers = MLP(layer_sizes, bias=True)
+        self.Model = MLP(layer_sizes, bias=True)
 
     def forward(self, x):
-        return self.layers(x)
+        return self.Model(x)
 
 
 class Petri_GCN(nn.Module):
@@ -25,32 +25,51 @@ class Petri_GCN(nn.Module):
                  in_channels: int,
                  hidden_features: int,
                  num_layers: int,
-                 dropout: float = .0,
-                 act: str = 'relu',
-                 norm: str = None,
-                 readout_layers: int = 2):
+                 readout_layers: int = 2,
+                 mae: bool = True):
         super().__init__()
         self.GNN = GCN(
             in_channels=in_channels,
             hidden_channels=hidden_features,
-            num_layers=num_layers,
-            dropout=dropout,
-            act=act,
-            norm=norm)
+            num_layers=num_layers)
         self.MLP_layer = MLPReadout(hidden_features, 1)
-        self.mae_loss = F.l1_loss
-        self.mre_loss = F.mse_loss
+        self.loss_function = F.l1_loss if mae else F.mse_loss
 
     def forward(self, g):
-        x = self.GNN(g.x, g.edge_index)
+        x = self.GNN(g.x, g.edge_index, g.edge_attr)
         x = self.MLP_layer(x)
         return scatter(x, g.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
-        return self.mae_loss(scores, targets)
+        return self.loss_function(scores, targets)
 
 
-class Petri_Cheb_GNN(nn.Module):
+class Petri_SAGE(nn.Module):
+    def __init__(self,
+                 in_channels: int,
+                 hidden_channels: int,
+                 num_layers: int,
+                 readout_layers: int = 2,
+                 mae: bool = True):
+        super().__init__()
+        self.GNN = GraphSAGE(
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            num_layers=num_layers)
+        self.Readout_Layer = MLPReadout(hidden_channels, 1)
+        self.loss_function = F.l1_loss if mae else F.mse_loss
+
+        def forward(self, batch: Batch):
+            x = batch.x
+            edge_index = batch.edge_index
+            edge_attr = batch.edge_attr if self.edge_attr else None
+
+            x = self.GNN(x, edge_index, edge_attr)
+            x = self.Readout_Layer(x)
+            return scatter(x, batch.batch, dim=0, reduce='mean')
+
+
+class Petri_Cheb(nn.Module):
     def __init__(self,
                  in_channels: int,
                  hidden_features: int,
@@ -66,19 +85,18 @@ class Petri_Cheb_GNN(nn.Module):
 
         self.layers = nn.ModuleList(layers)
         self.readout = MLPReadout(hidden_features, 1, readout_layers)
-        self.mae_loss = F.l1_loss
-        self.mre_loss = F.mse_loss
+        self.loss_function = F.l1_loss
 
-    def forward(self, data: Batch):
-        x = data.x
-        edge_index = data.edge_index
-        edge_weight = data.edge_attr
+    def forward(self, batch: Batch):
+        x = batch.x
+        edge_index = batch.edge_index
+        edge_attr = batch.edge_attr if self.edge_attr else None
 
-        y = self.layers[0](x, edge_index, edge_weight)
+        y = self.layers[0](x, edge_index, edge_attr)
         for layer in self.layers[1:]:
-            y = layer(y, edge_index, edge_weight)
+            y = layer(y, edge_index, edge_attr)
         y = self.readout(y)
-        return scatter(y, data.batch, dim=0, reduce='mean')
+        return scatter(y, batch.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
-        return self.mae_loss(scores, targets)
+        return self.loss_function(scores, targets)

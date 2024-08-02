@@ -38,13 +38,13 @@ def define_model(trial, num_features):
 
 
 def get_data(trial):
-    train_data = Path('Data/RandData_DS2_train_data.processed')
-    test_data = Path('Data/RandData_DS2_test_data.processed')
+    train_data = Path('Data/RandData_DS1_train_data.processed')
+    test_data = Path('Data/RandData_DS1_test_data.processed')
 
     train_dataset = get_reachability_dataset(
         train_data,
         reduce_node_features=True,
-        batch_size=trial.suggest_int("Batch size", 32, 128, step=16))
+        batch_size=64)
     test_dataset = get_reachability_dataset(
         test_data,
         reduce_node_features=True,

@@ -653,6 +653,9 @@ Each model was executed thirty times in order to gather statistical data of its 
  and its complexity,
  since the number of features and states varies greatly when compared to the grid-based organization,
  which ensures a uniform number of examples for each graph size.
+ Additionally,
+ the influence of edge features on the final result will be evaluated,
+ with the baseline model being unaware of these features.
 \end_layout
 
 \begin_layout Subsection
@@ -690,7 +693,8 @@ literal "false"
 ,
  referred to as GraphConv from now on.
  The baseline model for comparison is the GCN,
- and the configuration used for all models is described in Table 
+ using no edge features,
+ and the parameters used for all models are described in Table 
 \begin_inset CommandInset ref
 LatexCommand ref
 reference "tab:Baseline-Model"
@@ -701,8 +705,11 @@ nolink "false"
 
 \end_inset
 
-;
- 
+.
+\end_layout
+
+\begin_layout Standard
+GCNs 
 \end_layout
 
 \begin_layout Standard
@@ -711,7 +718,7 @@ placement document
 alignment document
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Caption Standard
@@ -731,7 +738,7 @@ name "tab:Baseline-Model"
 
 
 \begin_inset Tabular
-<lyxtabular version="3" rows="13" columns="2">
+<lyxtabular version="3" rows="11" columns="2">
 <features booktabs="true" tabularvalignment="middle">
 <column alignment="center" valignment="top" varwidth="true">
 <column alignment="center" valignment="top">
@@ -760,7 +767,7 @@ Value
 \begin_inset Text
 
 \begin_layout Plain Layout
-Layers (Baseline GCN)
+Layers
 \end_layout
 
 \end_inset
@@ -769,28 +776,7 @@ Layers (Baseline GCN)
 \begin_inset Text
 
 \begin_layout Plain Layout
-10
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Layers(ChebConv,
- GraphConv)
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-2-5
+5
 \end_layout
 
 \end_inset
@@ -810,7 +796,7 @@ Readout Layers
 \begin_inset Text
 
 \begin_layout Plain Layout
-2-4
+2
 \end_layout
 
 \end_inset
@@ -957,7 +943,7 @@ Epochs
 </cell>
 </row>
 <row>
-<cell alignment="center" valignment="top" topline="true" usebox="none">
+<cell alignment="center" valignment="top" topline="true" bottomline="true" usebox="none">
 \begin_inset Text
 
 \begin_layout Plain Layout
@@ -966,31 +952,11 @@ Loss Function
 
 \end_inset
 </cell>
-<cell alignment="center" valignment="top" topline="true" usebox="none">
+<cell alignment="center" valignment="top" topline="true" bottomline="true" usebox="none">
 \begin_inset Text
 
 \begin_layout Plain Layout
 MAE
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
 \end_layout
 
 \end_inset
@@ -1136,7 +1102,7 @@ name "sec:Discussion"
 \end_layout
 
 \begin_layout Section
-Conclusion
+Conclusions
 \begin_inset CommandInset label
 LatexCommand label
 name "sec:Conclusion"
@@ -1144,6 +1110,20 @@ name "sec:Conclusion"
 \end_inset
 
 
+\end_layout
+
+\begin_layout Standard
+This paper presents a comparison between some GNN models for the evaluation of a performance metric in Stochastic Petri Nets.
+ The results show that GNNs are a capable model for this particular problem due to its graph-based nature and the amount of information encoded in the vertices and edges of the network,
+ which cannot be easily used with other deep learning models.
+ Additionally,
+ a statistical comparison of these models in increasingly shallow networks shows that it remains usable;
+ this could be useful for on-line learning scenarios or in training for other Petri Net extensions in low-powered hardware.
+ Due to time constraints,
+ a deeper exploration with larger datasets was not possible.
+ Thus,
+ future research will explore the usability of these GNN models for more complex networks and other performance metrics,
+ such as the stationary probability distribution of SPNs and the direct generation of reachability graphs from the original Petri Nets.
 \end_layout
 
 \begin_layout Standard

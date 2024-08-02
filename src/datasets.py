@@ -61,7 +61,7 @@ def get_reachability_dataset(
         size, data = __pad_node_features__(data)
         
     data_iterator = list(starmap(f, data))
-    loader = DataLoader(data_iterator, batch_size=batch_size)
+    loader = DataLoader(data_iterator, batch_size=batch_size, shuffle=True)
     loader.num_features = 1 if reduce_node_features else size
     
     return loader

@@ -16,4 +16,5 @@ dependencies:
   - jupyter
   - ipywidgets
   - python-lsp-server
+  - scikit-posthocs
 

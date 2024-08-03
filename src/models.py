@@ -26,7 +26,8 @@ class Petri_GCN(nn.Module):
                  hidden_features: int,
                  num_layers: int,
                  readout_layers: int = 2,
-                 mae: bool = True):
+                 mae: bool = True,
+                 edge_attr: bool = True):
         super().__init__()
         self.GNN = GCN(
             in_channels=in_channels,
@@ -34,6 +35,7 @@ class Petri_GCN(nn.Module):
             num_layers=num_layers)
         self.MLP_layer = MLPReadout(hidden_features, 1)
         self.loss_function = F.l1_loss if mae else F.mse_loss
+        self.edge_attr = edge_attr
 
     def forward(self, g):
         x = self.GNN(g.x, g.edge_index, g.edge_attr)
@@ -50,7 +52,8 @@ class Petri_SAGE(nn.Module):
                  hidden_channels: int,
                  num_layers: int,
                  readout_layers: int = 2,
-                 mae: bool = True):
+                 mae: bool = True,
+                 edge_attr: bool = True):
         super().__init__()
         self.GNN = GraphSAGE(
             in_channels=in_channels,
@@ -58,15 +61,16 @@ class Petri_SAGE(nn.Module):
             num_layers=num_layers)
         self.Readout_Layer = MLPReadout(hidden_channels, 1)
         self.loss_function = F.l1_loss if mae else F.mse_loss
+        self.edge_attr = edge_attr
 
-        def forward(self, batch: Batch):
-            x = batch.x
-            edge_index = batch.edge_index
-            edge_attr = batch.edge_attr if self.edge_attr else None
+    def forward(self, batch: Batch):
+        x = batch.x
+        edge_index = batch.edge_index
+        edge_attr = batch.edge_attr if self.edge_attr else None
 
-            x = self.GNN(x, edge_index, edge_attr)
-            x = self.Readout_Layer(x)
-            return scatter(x, batch.batch, dim=0, reduce='mean')
+        x = self.GNN(x, edge_index, edge_attr)
+        x = self.Readout_Layer(x)
+        return scatter(x, batch.batch, dim=0, reduce='mean')
 
 
 class Petri_Cheb(nn.Module):
@@ -76,7 +80,8 @@ class Petri_Cheb(nn.Module):
                  num_layers: int,
                  filter_size: int = 3,
                  norm: str = 'sym',
-                 readout_layers: int = 2):
+                 readout_layers: int = 2,
+                 edge_attr: bool = True):
         super().__init__()
         layers = [ChebConv(in_channels, hidden_features, filter_size, norm)]
         layers.extend([
@@ -86,6 +91,7 @@ class Petri_Cheb(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.readout = MLPReadout(hidden_features, 1, readout_layers)
         self.loss_function = F.l1_loss
+        self.edge_attr = edge_attr
 
     def forward(self, batch: Batch):
         x = batch.x

@@ -72,6 +72,9 @@ class Petri_SAGE(nn.Module):
         x = self.Readout_Layer(x)
         return scatter(x, batch.batch, dim=0, reduce='mean')
 
+    def loss(self, scores, targets):
+        return self.loss_function(scores, targets)
+
 
 class Petri_Cheb(nn.Module):
     def __init__(self,

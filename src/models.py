@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Batch
-from torch_geometric.nn import GCN, MLP, ChebConv, GraphSAGE
+from torch_geometric.nn import GCN, MLP, ChebConv, GraphSAGE, GraphConv
 from torch_geometric.utils import scatter
 
 
@@ -89,6 +89,39 @@ class Petri_Cheb(nn.Module):
         layers = [ChebConv(in_channels, hidden_features, filter_size, norm)]
         layers.extend([
             ChebConv(hidden_features, hidden_features, filter_size, norm)
+            for _ in range(num_layers)])
+
+        self.layers = nn.ModuleList(layers)
+        self.readout = MLPReadout(hidden_features, 1, readout_layers)
+        self.loss_function = F.l1_loss
+        self.edge_attr = edge_attr
+
+    def forward(self, batch: Batch):
+        x = batch.x
+        edge_index = batch.edge_index
+        edge_attr = batch.edge_attr if self.edge_attr else None
+
+        y = self.layers[0](x, edge_index, edge_attr)
+        for layer in self.layers[1:]:
+            y = layer(y, edge_index, edge_attr)
+        y = self.readout(y)
+        return scatter(y, batch.batch, dim=0, reduce='mean')
+
+    def loss(self, scores, targets):
+        return self.loss_function(scores, targets)
+
+
+class Petri_GraphConv(nn.Module):
+    def __init__(self,
+                 in_channels: int,
+                 hidden_features: int,
+                 num_layers: int,
+                 readout_layers: int = 2,
+                 edge_attr: bool = True):
+        super().__init__()
+        layers = [GraphConv(in_channels, hidden_features)]
+        layers.extend([
+            GraphConv(hidden_features, hidden_features)
             for _ in range(num_layers)])
 
         self.layers = nn.ModuleList(layers)

@@ -102,7 +102,7 @@
 \begin_body
 
 \begin_layout Title
-GNNs for the Performance Evalution of Stochastic Petri Nets
+GNNs for the Performance Evaluation of Stochastic Petri Nets
 \end_layout
 
 \begin_layout Author
@@ -110,13 +110,19 @@ Gabriel Oliveira
 \end_layout
 
 \begin_layout Abstract
-Stochastic Petri Nets are a commonly used modelling tool for description and evaluation of performance metrics on discrete systems.
- The simplest metric that can be derived is the average number of tokens flowing in the network,
- which represents amount of work done on average.
- While this is not a complex procedure,
- traditional machine learning and deep learning solutions perform poorly due to the information encoded in the graph structure.
- GNNs have proven to be a viable tool for applications that hinge on graph-like data,
- such as this problem.
+Stochastic Petri Nets are a commonly used modelling tool for the description and evaluation of performance metrics on discrete systems,
+ such as the average amount of work done by a system and possible bottlenecks.
+ However,
+ most systems have a inordinate amount of possible states,
+ so stochastic or heuristic techniques are commonly used to derive usable metrics from them.
+ Traditional deep learning and machine learning approaches have failed to provide useful results due to the highly dynamic nature of these Petri Nets,
+ which makes feature extraction difficult;
+ a considerable is encoded on the graph structure,
+ information that is also lost on the feature engineering process.
+ GNNs are a promising deep learning model for graph-based data,
+ and its performance in predicting the average number of tokens in an SPN has been evaluated.
+ Results are promising,
+ with most models achieving predictions within 10% of the real values for dataset used.
 \end_layout
 
 \begin_layout Section*
@@ -383,6 +389,11 @@ Liveness (partially):
  in which no transitions are enabled;
 \end_layout
 
+\begin_layout Itemize
+Boundedness:
+ the maximum number of tokens present in a place within the network.
+\end_layout
+
 \begin_layout Subsection
 Stochastic Petri Nets
 \end_layout
@@ -481,7 +492,15 @@ Although Petri Nets are a useful tool,
  a new state is created),
  Petri Nets are prone to state-space explosion,
  where even simple systems have an inordinate number of states.
- There are several techniques that can be applied to either reduce the state-space or avoid an exhaustive search;
+ A different initial marking produces a completely new dataset,
+ so analysing a system only by its structural information is impossible:
+ in this sense,
+ they behave similarly to chaotic systems,
+ which are highly dependent on their initial state.
+\end_layout
+
+\begin_layout Standard
+Several techniques that can be applied to either reduce the state-space or avoid an exhaustive search;
  most extensions,
  such as Continuous Petri Nets and Hierarchical Petri Nets,
  and algebraic methods fall into the former category,
@@ -489,6 +508,16 @@ Although Petri Nets are a useful tool,
  Stochastic Petri Nets suffer from the same issues,
  while also bringing some new ones specific to Markov Chains,
  such as systems that never reach a steady-state or that have no analytical solution.
+ In such situations,
+ modellers must rely on simulation to determine the qualities of the system.
+\end_layout
+
+\begin_layout Standard
+Finally,
+ the graphical nature of Petri Nets and their extensions precluded the application of deep learning and machine learning techniques:
+ the amount of features varies greatly between nets of the same size and,
+ given that initial markings produce different reachability sets,
+ feature engineering becomes difficult.
 \end_layout
 
 \begin_layout Section
@@ -503,8 +532,9 @@ name "sec:Related-Works"
 \end_layout
 
 \begin_layout Standard
-Most related works have focused on hybrid systems:
- enhancing Petri Nets with deep learning techniques.
+Most related works have focused on hybrid systems,
+ enhancing Petri Nets with deep learning techniques,
+ particularly reinforcement learning.
  One such work is 
 \begin_inset CommandInset citation
 LatexCommand cite
@@ -608,10 +638,13 @@ The proposed hybrid model is composed of a GNN,
  and a MLP:
  the GNN model learns a vector representation of the reachability graph and its features,
  and produces a vector of features of the input graph;
- this vector is then fed into the MLP model to generate the final output,
+ this feature vector is then fed into the MLP model to generate the final output,
  a scalar value,
  in our case,
- representing the average number of tokens in the SPN.
+ representing the average number of tokens in the SPN;
+ the GNN model is composed of a single type of layer;
+ the input for this model is the reachability graph of an SPN,
+ rather than the SPN itself.
  A simple diagram is available in Figure
 \begin_inset CommandInset ref
 LatexCommand ref
@@ -714,7 +747,7 @@ literal "false"
 \end_inset
 
 :
- this dataset contains 1000 SPNs,
+ this dataset contains 1000 examples,
  split 80/20 between training and testing,
  and examples within each batch were shuffled for each iteration.
  The node features for each node,
@@ -786,7 +819,13 @@ nolink "false"
 \end_layout
 
 \begin_layout Standard
-GCNs 
+A quick overview on what each operator does:
+ both the GCN and ChebConv models work by computing spectral graph convolutions on the Fourier domain,
+ with the former doing a first order approximation,
+ and the latter applying a filter;
+ GraphSAGE aggregates node information directly,
+ and;
+ GraphConv works through iterative node colouring to detect isomorphisms within the graph.
 \end_layout
 
 \begin_layout Standard
@@ -1495,7 +1534,7 @@ Moving on,
  and its performance likely could be improved by tuning the size of the filter and the normalization function used.
  GraphConv performed better than expected,
  even taking into account that it is simpler operator in comparison to GCN.
- The GCN model has a larger number of features that could also be explored to further tune its performance,
+ The GCN model has a larger number of settings that could also be explored to further tune its performance,
  but doing so will be left as future work.
  Likewise,
  combining different layers to create a new network model could be interesting,
@@ -1532,35 +1571,11 @@ In order to ensure that these models differ from one another,
  Two tests were performed:
  first,
  a Friedman test to determine that there is a statistical difference between the models,
- the results of which can be seen on Figure
-\begin_inset CommandInset ref
-LatexCommand ref
-reference "fig:Friedman-Test"
-plural "false"
-caps "false"
-noprefix "false"
-nolink "false"
-
-\end_inset
-
-,
  followed by pairwise comparisons using Conover a 
 \emph on
 post hoc
 \emph default
- test to determine which the differences between each model,
- which can be seen in Figure
-\begin_inset CommandInset ref
-LatexCommand ref
-reference "fig:Critical-Differences"
-plural "false"
-caps "false"
-noprefix "false"
-nolink "false"
-
-\end_inset
-
-.
+ test to determine which the differences between each model.
 \end_layout
 
 \begin_layout Standard
@@ -1603,10 +1618,36 @@ name "fig:Friedman-Test"
 \end_layout
 
 \begin_layout Standard
-We can see that,
+From the Friedman tests,
+ the results of which are in Figure 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Friedman-Test"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+,
+ it's possible to see that,
  while the GCN and Chebyshev models do not appear to have a significant statistical difference between themselves,
- SAGEGraph and GraphConv do differ.
- Looking at the results of the second test confirms that assumption,
+ SAGEGraph and GraphConv do differ from the other models.
+ Looking at the results of the second test,
+ available in Figure
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Critical-Differences"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+,
+ confirms that assumption,
  with GraphConv performing much better in comparison to other models,
  with GCN and Chebyshev being statistically indistinguishable from each other,
  and SAGEGraph having the worst performance of the compared models.
@@ -1675,7 +1716,18 @@ Although the graphs used in this work were small,
  graphs with billions of nodes and edges are also not uncommon.
  For this reason,
  it was possible to train these models in a reasonable amount of time using only CPUs,
- although this was only possible due to the shallow nature of the networks and the reduced number of node
+ although this was only possible due to the shallow nature of the networks and the reduced number of node features in this particular problem.
+ Another 
+\begin_inset Quotes eld
+\end_inset
+
+simple
+\begin_inset Quotes erd
+\end_inset
+
+,
+ useful metric that can be computed in the same manner is the average number of tokens in each place on the network:
+ it's not possible to reduce the dimensionality of node features in this case.
 \end_layout
 
 \begin_layout Section
@@ -1695,12 +1747,26 @@ This paper presents a comparison between some GNN models for the evaluation of a
  which cannot be easily used with other deep learning models.
  Additionally,
  a statistical comparison of these models in increasingly shallow networks shows that it remains usable;
- this could be useful for on-line learning scenarios or in training for other Petri Net extensions in low-powered hardware.
- Due to time constraints,
- a deeper exploration with larger datasets was not possible.
- Thus,
- future research will explore the usability of these GNN models for more complex networks and other performance metrics,
- such as the stationary probability distribution of SPNs and the direct generation of reachability graphs from Petri Nets.
+ this could be useful for on-line learning scenarios or when training these models in low-powered hardware.
+ 
+\end_layout
+
+\begin_layout Standard
+Due to time constraints,
+ a deeper exploration with larger datasets was not possible;
+ this is going to be explored in future works,
+ as will be the implementation of the SPN generation algorithm;
+ implementing generation algorithms for other types of Peri Nets would enable the exploration of new types of problems with these GNN models,
+ so this will be investigated.
+\end_layout
+
+\begin_layout Standard
+Future research will also explore the performance of these GNN models for more complex tasks within SPNs,
+ such as the prediction of the average number of tokens per place,
+ and the stationary probability distribution for each state in the reachability graph.
+ Likewise,
+ the evaluation of other characteristics in Petri Nets will also be explored,
+ with some like liveness and boundedness.
 \end_layout
 
 \begin_layout Standard

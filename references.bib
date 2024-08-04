@@ -205,6 +205,24 @@ and Bortolussi, Luca",
 	publisher = {Institute of Electrical and Electronics Engineers (IEEE)}
 }
 
+@inproceedings{You22,
+	author = {You, Jiaxuan and Du, Tianyu and Leskovec, Jure},
+	title = {ROLAND: Graph Learning Framework for Dynamic Graphs},
+	year = {2022},
+	isbn = {9781450393850},
+	publisher = {Association for Computing Machinery},
+	address = {New York, NY, USA},
+	url = {https://doi.org/10.1145/3534678.3539300},
+	doi = {10.1145/3534678.3539300},
+	abstract = {Graph Neural Networks (GNNs) have been successfully applied to many real-world static graphs. However, the success of static graphs has not fully translated to dynamic graphs due to the limitations in model design, evaluation settings, and training strategies. Concretely, existing dynamic GNNs do not incorporate state-of-the-art designs from static GNNs, which limits their performance. Current evaluation settings for dynamic GNNs do not fully reflect the evolving nature of dynamic graphs. Finally, commonly used training methods for dynamic GNNs are not scalable. Here we propose ROLAND, an effective graph representation learning framework for real-world dynamic graphs. At its core, the ROLAND framework can help researchers easily repurpose any static GNN to dynamic graphs. Our insight is to view the node embeddings at different GNN layers as hierarchical node states and then recurrently update them over time. We then introduce a live-update evaluation setting for dynamic graphs that mimics real-world use cases, where GNNs are making predictions and being updated on a rolling basis. Finally, we propose a scalable and efficient training approach for dynamic GNNs via incremental training and meta-learning. We conduct experiments over eight different dynamic graph datasets on future link prediction tasks. Models built using the ROLAND framework achieve on average 62.7\% relative mean reciprocal rank (MRR) improvement over state-of-the-art baselines under the standard evaluation settings on three datasets. We find state-of-the-art baselines experience out-of-memory errors for larger datasets, while ROLAND can easily scale to dynamic graphs with 56 million edges. After re-implementing these baselines using the ROLAND training strategy, ROLAND models still achieve on average 15.5\% relative MRR improvement over the baselines.},
+	booktitle = {Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
+	pages = {2358–2366},
+	numpages = {9},
+	keywords = {dynamic graphs, graph neural networks, network analysis},
+	location = {Washington DC, USA},
+	series = {KDD '22}
+}
+
 @Book{german00:_perfor_analy_commun_system,
 	url = {https://www.wiley.com/en-us/Performance+Analysis+of+Communication+Systems+%3A+Modeling+with+Non-Markovian+Stochastic+Petri+Nets-p-9780471492580},
 	publisher = {Wiley},
@@ -212,6 +230,21 @@ and Bortolussi, Luca",
 	year = {2000},
 	title = {Performance Analysis of Communication Systems: Modeling with Non-Markovian Stochastic Petri Nets},
 	author = {Reinhard German}
+}
+
+@inproceedings{hamilton17,
+	author = {Hamilton, William L. and Ying, Rex and Leskovec, Jure},
+	title = {Inductive representation learning on large graphs},
+	year = {2017},
+	isbn = {9781510860964},
+	publisher = {Curran Associates Inc.},
+	address = {Red Hook, NY, USA},
+	abstract = {Low-dimensional embeddings of nodes in large graphs have proved extremely useful in a variety of prediction tasks, from content recommendation to identifying protein functions. However, most existing approaches require that all nodes in the graph are present during training of the embeddings; these previous approaches are inherently transductive and do not naturally generalize to unseen nodes. Here we present GraphSAGE, a general inductive framework that leverages node feature information (e.g., text attributes) to efficiently generate node embeddings for previously unseen data. Instead of training individual embeddings for each node, we learn a function that generates embeddings by sampling and aggregating features from a node's local neighborhood. Our algorithm outperforms strong baselines on three inductive node-classification benchmarks: we classify the category of unseen nodes in evolving information graphs based on citation and Reddit post data, and we show that our algorithm generalizes to completely unseen graphs using a multi-graph dataset of protein-protein interactions.},
+	booktitle = {Proceedings of the 31st International Conference on Neural Information Processing Systems},
+	pages = {1025–1035},
+	numpages = {11},
+	location = {Long Beach, California, USA},
+	series = {NIPS'17}
 }
 
 @Article{kipf17:_semi_super_class_graph_convol_networ,
@@ -241,6 +274,14 @@ and Bortolussi, Luca",
 	date = {1981-02-01},
 	title = {PETRI NET THEORY AND THE MODELING OF SYSTEMS},
 	author = {James L. Peterson}
+}
+
+@Article{you20:_desig_space_graph_neural_networ,
+	journal = {NeurIPS},
+	year = {2020},
+	eventtitleaddon = {NeurIPS},
+	title = {Design Space for Graph Neural Networks},
+	author = {Jiaxuan You and Rex Ying and Jure Leskovec}
 }
 
 @Comment{

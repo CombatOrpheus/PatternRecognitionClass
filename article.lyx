@@ -102,7 +102,7 @@
 \begin_body
 
 \begin_layout Title
-Statistical Comparison of GNN Models for SPN Metrics
+GNNs for the Performance Evalution of Stochastic Petri Nets
 \end_layout
 
 \begin_layout Author
@@ -294,7 +294,17 @@ A Petri Net is a graphical and mathematical model,
  so there are no self-loops,
  nor do elements of the same type connect to each other (places connect to transitions,
  and transitions connect to places).
- A marking represents the distribution of tokens (positive integers) in each place on the Petri Net;
+ 
+\end_layout
+
+\begin_layout Standard
+A marking,
+ 
+\begin_inset Formula $\mu$
+\end_inset
+
+,
+ represents the distribution of tokens in each place on the Petri Net;
  transitions do not hold tokens.
  Given a marking,
  
@@ -303,14 +313,10 @@ A Petri Net is a graphical and mathematical model,
 
 ,
  a transition is said to be 
-\begin_inset Quotes eld
-\end_inset
-
-enabled
-\begin_inset Quotes erd
-\end_inset
-
- when the number of tokens in its inputs is greater than or equal to the number of tokens requested by the arc;
+\emph on
+enabled 
+\emph default
+when the number of tokens in its inputs is greater than or equal to the number of tokens requested by the arc;
  transitions fire as soon as they are enable,
  consuming tokens from their inputs and producing tokens in their outputs.
  Firing a transition is an atomic operation and,
@@ -320,25 +326,21 @@ enabled
 \end_layout
 
 \begin_layout Standard
-Given a marking 
-\begin_inset Formula $\mu$
-\end_inset
-
-,
- whenever a transition fires,
+Whenever a transition fires,
  a new marking,
  
 \begin_inset Formula $\mu'$
 \end_inset
 
+,
  is generated,
- possibly enabling other transitions,
+ possibly enabling or disabling other transitions,
  which can fire and generate new markings.
- The set of all possible firing sequences generates the 
+ The set of all possible firing sequences is the 
 \emph on
 reachability graph
 \emph default
- of this Petri Net.
+ of the Petri Net.
  This possibly infinite graph is used to verify certain characteristics of the modelled system
 \begin_inset CommandInset citation
 LatexCommand cite
@@ -412,7 +414,7 @@ A Stochastic Petri Net is defined by a tuple
 The underlying abstraction of the SPN is the Markov Chain,
  and,
  for that reason,
- only memoryless distributions (exponential and geometric) can be used for the firing rate of these transitions;
+ only memoryless distributions (exponential and geometric) can be used to model the firing rate of these transitions;
  for systems with a mix of 
 \emph on
 immediate
@@ -428,7 +430,10 @@ literal "false"
 
  are an option for modelling and analysis,
  with little additional complexity.
- For systems with 
+\end_layout
+
+\begin_layout Standard
+For systems with 
 \emph on
 non-Markovian distributions
 \emph default
@@ -443,7 +448,7 @@ literal "false"
 \end_inset
 
  is one of the few references on this subject,
- with TimeNET
+ and TimeNET
 \begin_inset CommandInset citation
 LatexCommand cite
 key "10.1007/978-3-319-66335-7_19"
@@ -451,7 +456,7 @@ literal "false"
 
 \end_inset
 
- being one of two programs capable of dealing with such models,
+ is one of the two programs capable of dealing with such models,
  the other being SPNP
 \begin_inset CommandInset citation
 LatexCommand cite
@@ -582,7 +587,8 @@ literal "false"
 ,
  where Coloured Petri Nets were used for modelling and analysing the performance of an agent-based resource allocation algorithm.
  Few works on this line have attempted to use non-recurrent models,
- like MLPs and CNNs.
+ like MLPs and CNNs,
+ due to the varying sizes of Petri Nets and their features.
 \end_layout
 
 \begin_layout Section
@@ -606,6 +612,17 @@ The proposed hybrid model is composed of a GNN,
  a scalar value,
  in our case,
  representing the average number of tokens in the SPN.
+ A simple diagram is available in Figure
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Proposed-Model"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
  The GNN models were created with the PyGeometric library
 \begin_inset CommandInset citation
 LatexCommand cite
@@ -623,14 +640,52 @@ literal "false"
 \end_layout
 
 \begin_layout Standard
-The main question that we are interested in answering is whether a smaller number of layers is capable of delivering the same performance when all other settings remain equal:
- due to the size of the dataset and the graphs within,
- a 10-layer model might be excessive;
- likewise,
- whether the addition of more layers to the MLP readout is capable of improving performance.
- For this,
- we'll vary the number of GNN layers from 2 to 5,
- and the number of layers on the MLP readout from 2 to 5.
+\begin_inset Float figure
+placement document
+alignment document
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename Hybrid Model.drawio.png
+	width 50text%
+	height 50theight%
+	keepAspectRatio
+
+\end_inset
+
+
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Proposed Model
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Proposed-Model"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Section
@@ -646,16 +701,27 @@ name "sec:Experiments"
 
 \begin_layout Standard
 Each model was executed thirty times in order to gather statistical data of its performance.
- The dataset used for the experiment was DS2,
- in it's random configuration:
- the choice of this dataset was due to its reasonable size,
- containing 6000 examples,
- and its complexity,
- since the number of features and states varies greatly when compared to the grid-based organization,
- which ensures a uniform number of examples for each graph size.
- Additionally,
- the influence of edge features on the final result will be evaluated,
- with the baseline model being unaware of these features.
+ The dataset used for the experiment was 
+\emph on
+RandDS1
+\emph default
+
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Wang2022a"
+literal "false"
+
+\end_inset
+
+:
+ this dataset contains 1000 SPNs,
+ split 80/20 between training and testing,
+ and examples within each batch were shuffled for each iteration.
+ The node features for each node,
+ which represented a marking in the original Petri Net,
+ was summed into a scalar value:
+ this does not incur any loss of information at the node-level;
+ edge features required no reduction in their dimensionality as they were already scalar values.
 \end_layout
 
 \begin_layout Subsection
@@ -682,7 +748,8 @@ literal "false"
 
 \end_inset
 
- and the graph neural network operator defined in 
+,
+ the graph neural network operator defined in 
 \begin_inset CommandInset citation
 LatexCommand cite
 key "Morris19"
@@ -691,9 +758,19 @@ literal "false"
 \end_inset
 
 ,
- referred to as GraphConv from now on.
+ referred to as GraphConv from now on,
+ and the GraphSAGE operator
+\begin_inset CommandInset citation
+LatexCommand cite
+key "hamilton17"
+literal "false"
+
+\end_inset
+
+;
+ GraphSAGE differs from the other models in that it does not consider edge characteristics,
+ so it is expected to perform poorly.
  The baseline model for comparison is the GCN,
- using no edge features,
  and the parameters used for all models are described in Table 
 \begin_inset CommandInset ref
 LatexCommand ref
@@ -776,7 +853,7 @@ Layers
 \begin_inset Text
 
 \begin_layout Plain Layout
-5
+10
 \end_layout
 
 \end_inset
@@ -796,7 +873,7 @@ Readout Layers
 \begin_inset Text
 
 \begin_layout Plain Layout
-2
+3
 \end_layout
 
 \end_inset
@@ -916,7 +993,7 @@ Batch Size
 \begin_inset Text
 
 \begin_layout Plain Layout
-64
+16
 \end_layout
 
 \end_inset
@@ -1032,7 +1109,11 @@ The mean squared error (MSE) is the average squared difference between the predi
 \end_layout
 
 \begin_layout Standard
-Results are presented in Table 
+The metric of greatest interest is the MRE,
+ since we want to ensure that predictions are,
+ relatively,
+ as close as possible to the real values.
+ Results are presented in Table 
 \begin_inset CommandInset ref
 LatexCommand ref
 reference "tab:Results"
@@ -1079,6 +1160,292 @@ name "tab:Results"
 \end_inset
 
 
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="4">
+<features booktabs="true" tabularvalignment="middle">
+<column alignment="center" valignment="top" varwidth="true">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Model
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+MAE
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+MRE
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+MSE
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+GCN (Baseline)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+0.3053
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+8.76%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+0.2348
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Chebyshev
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.3230
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+9.31%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.2159
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+GraphSAGE
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.5803
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+16.99%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+0.5335
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+GraphConv
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+0.2376
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+6.71%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+0.1357
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Plain Layout
@@ -1099,6 +1466,216 @@ name "sec:Discussion"
 \end_inset
 
 
+\end_layout
+
+\begin_layout Standard
+When considering the performance of these models,
+ GraphSAGE performed significantly worse,
+ although this was expected:
+ the lack of edge information,
+ which is the average firing rate for each transition (
+\begin_inset Formula $\lambda$
+\end_inset
+
+) is essential for determining the average number of tokens in the network.
+ That it performs this well,
+ even without this information,
+ is likely to do with the characteristics of the dataset,
+ which limited the values of 
+\begin_inset Formula $\lambda$
+\end_inset
+
+ to the range [1,
+ 10].
+\end_layout
+
+\begin_layout Standard
+Moving on,
+ the Chebyshev model performed similarly to GCN,
+ and its performance likely could be improved by tuning the size of the filter and the normalization function used.
+ GraphConv performed better than expected,
+ even taking into account that it is simpler operator in comparison to GCN.
+ The GCN model has a larger number of features that could also be explored to further tune its performance,
+ but doing so will be left as future work.
+ Likewise,
+ combining different layers to create a new network model could be interesting,
+ but this would require a deeper understanding of each operator.
+ Frameworks like GraphGym
+\begin_inset CommandInset citation
+LatexCommand cite
+key "you20:_desig_space_graph_neural_networ"
+literal "false"
+
+\end_inset
+
+ or ROLAND
+\begin_inset CommandInset citation
+LatexCommand cite
+key "You22"
+literal "false"
+
+\end_inset
+
+ could help on this front by automating the search process,
+ although computational costs are likely to be high.
+\end_layout
+
+\begin_layout Subsection
+Statistical Tests
+\end_layout
+
+\begin_layout Standard
+In order to ensure that these models differ from one another,
+ statistical tests were conducted,
+ using a sample of thirty executions:
+ models were recreated for each run in order to ensure that they retained no data from previous executions.
+ Two tests were performed:
+ first,
+ a Friedman test to determine that there is a statistical difference between the models,
+ the results of which can be seen on Figure
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Friedman-Test"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+,
+ followed by pairwise comparisons using Conover a 
+\emph on
+post hoc
+\emph default
+ test to determine which the differences between each model,
+ which can be seen in Figure
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Critical-Differences"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement document
+alignment document
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename Significance Plot.png
+	scale 50
+
+\end_inset
+
+
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Friedman Test
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Friedman-Test"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We can see that,
+ while the GCN and Chebyshev models do not appear to have a significant statistical difference between themselves,
+ SAGEGraph and GraphConv do differ.
+ Looking at the results of the second test confirms that assumption,
+ with GraphConv performing much better in comparison to other models,
+ with GCN and Chebyshev being statistically indistinguishable from each other,
+ and SAGEGraph having the worst performance of the compared models.
+ Although these results match our assumptions,
+ having statistical data to back up such claims is reassuring.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement document
+alignment document
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename Critical diagram pretty.png
+	width 50text%
+	height 50cm
+	keepAspectRatio
+
+\end_inset
+
+
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Critical Differences
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Critical-Differences"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Computational Costs
+\end_layout
+
+\begin_layout Standard
+Although the graphs used in this work were small,
+ i.e.,
+ less than 200 nodes in total,
+ most graph problems commonly have thousands to millions of nodes;
+ graphs with billions of nodes and edges are also not uncommon.
+ For this reason,
+ it was possible to train these models in a reasonable amount of time using only CPUs,
+ although this was only possible due to the shallow nature of the networks and the reduced number of node
 \end_layout
 
 \begin_layout Section
@@ -1123,7 +1700,7 @@ This paper presents a comparison between some GNN models for the evaluation of a
  a deeper exploration with larger datasets was not possible.
  Thus,
  future research will explore the usability of these GNN models for more complex networks and other performance metrics,
- such as the stationary probability distribution of SPNs and the direct generation of reachability graphs from the original Petri Nets.
+ such as the stationary probability distribution of SPNs and the direct generation of reachability graphs from Petri Nets.
 \end_layout
 
 \begin_layout Standard

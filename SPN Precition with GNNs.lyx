@@ -580,10 +580,13 @@ literal "false"
 ,
  propose a deeper integration between deep learning models and Petri Nets,
  using the latter to guide the construction of new ANNs and achieving interesting results.
- Finally 
+\end_layout
+
+\begin_layout Standard
+Finally 
 \begin_inset CommandInset citation
 LatexCommand cite
-key "Wang2022a"
+key "Guang2021"
 literal "false"
 
 \end_inset
@@ -592,6 +595,16 @@ literal "false"
  specifically for SPNs;
  indeed,
  the dataset used in this work was generated with the algorithm they proposed.
+ Additionally,
+ 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Wang2022a"
+literal "false"
+
+\end_inset
+
+ continues their work and develops a set of GNN operators specifically geared for learning information from Petri Nets.
 \end_layout
 
 \begin_layout Standard
@@ -678,7 +691,7 @@ placement document
 alignment document
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 
@@ -686,7 +699,7 @@ status open
 
 \begin_layout Plain Layout
 \begin_inset Graphics
-	filename Hybrid Model.drawio.png
+	filename Images/Hybrid Model.drawio.png
 	width 50text%
 	height 50theight%
 	keepAspectRatio
@@ -834,7 +847,7 @@ placement document
 alignment document
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 \begin_inset Caption Standard
@@ -1180,7 +1193,7 @@ placement document
 alignment document
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 \begin_inset Caption Standard
@@ -1588,7 +1601,7 @@ status open
 
 \begin_layout Plain Layout
 \begin_inset Graphics
-	filename Significance Plot.png
+	filename Images/Significance Plot.png
 	scale 50
 
 \end_inset
@@ -1661,15 +1674,11 @@ placement document
 alignment document
 wide false
 sideways false
-status open
-
-\begin_layout Plain Layout
-
-\end_layout
+status collapsed
 
 \begin_layout Plain Layout
 \begin_inset Graphics
-	filename Critical diagram pretty.png
+	filename Images/Critical diagram pretty.png
 	width 50text%
 	height 50cm
 	keepAspectRatio
@@ -1767,6 +1776,18 @@ Future research will also explore the performance of these GNN models for more c
  Likewise,
  the evaluation of other characteristics in Petri Nets will also be explored,
  with some like liveness and boundedness.
+ Finally,
+ a closer look at the operators presented in 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Wang2022a"
+literal "false"
+
+\end_inset
+
+ is required,
+ due to the promising results that they had,
+ particularly in real world datasets.
 \end_layout
 
 \begin_layout Standard

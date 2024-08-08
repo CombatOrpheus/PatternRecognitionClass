@@ -1,8 +1,13 @@
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor, mean
 from torch_geometric.data import Batch
 from torch_geometric.nn import GCN, MLP, ChebConv, GraphSAGE, GraphConv
 from torch_geometric.utils import scatter
+
+
+def __relative_error__(input: Tensor, target: Tensor):
+    return mean(F.l1_loss(input, target, reduction='none')/target) * 100
 
 
 class MLPReadout(nn.Module):
@@ -117,6 +122,7 @@ class Petri_GraphConv(nn.Module):
                  hidden_features: int,
                  num_layers: int,
                  readout_layers: int = 2,
+                 mae: bool = True,
                  edge_attr: bool = True):
         super().__init__()
         layers = [GraphConv(in_channels, hidden_features)]
@@ -126,7 +132,7 @@ class Petri_GraphConv(nn.Module):
 
         self.layers = nn.ModuleList(layers)
         self.readout = MLPReadout(hidden_features, 1, readout_layers)
-        self.loss_function = F.l1_loss
+        self.loss_function = F.l1_loss if mae else __relative_error__
         self.edge_attr = edge_attr
 
     def forward(self, batch: Batch):

@@ -1,4 +1,3 @@
-from copy import copy
 from itertools import starmap
 from pathlib import Path
 from typing import List, Iterable
@@ -32,11 +31,12 @@ def __to_data__(
     label: float
 ) -> Data:
     return Data(
-        x = as_tensor(graph_info[0]).float(),
+        x=as_tensor(graph_info[0]).float(),
         edge_index=as_tensor(graph_info[1]).view(2, -1).long(),
         edge_attr=as_tensor(graph_info[3][graph_info[2]]).float(),
         y=as_tensor(label),
         num_nodes=graph_info[0].shape[0])
+
 
 def __to_data_reduced_features__(
         graph_info: List[np.array],
@@ -59,9 +59,9 @@ def get_reachability_dataset(
     f = __to_data_reduced_features__ if reduce_node_features else __to_data__
     if not reduce_node_features:
         size, data = __pad_node_features__(data)
-        
+
     data_iterator = list(starmap(f, data))
     loader = DataLoader(data_iterator, batch_size=batch_size, shuffle=True)
     loader.num_features = 1 if reduce_node_features else size
-    
+
     return loader

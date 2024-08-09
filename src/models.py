@@ -39,7 +39,7 @@ class Petri_GCN(nn.Module):
             hidden_channels=hidden_features,
             num_layers=num_layers)
         self.MLP_layer = MLPReadout(hidden_features, 1)
-        self.loss_function = F.l1_loss if mae else F.mse_loss
+        self.loss_function = F.l1_loss if mae else __relative_error__
         self.edge_attr = edge_attr
 
     def forward(self, g):
@@ -87,8 +87,8 @@ class Petri_Cheb(nn.Module):
                  hidden_features: int,
                  num_layers: int,
                  filter_size: int = 3,
-                 norm: str = 'sym',
                  readout_layers: int = 2,
+                 mae: bool = True,
                  edge_attr: bool = True):
         super().__init__()
         layers = [ChebConv(in_channels, hidden_features, filter_size, norm)]
@@ -98,7 +98,7 @@ class Petri_Cheb(nn.Module):
 
         self.layers = nn.ModuleList(layers)
         self.readout = MLPReadout(hidden_features, 1, readout_layers)
-        self.loss_function = F.l1_loss
+        self.loss_function = F.l1_loss if mae else __relative_error_
         self.edge_attr = edge_attr
 
     def forward(self, batch: Batch):

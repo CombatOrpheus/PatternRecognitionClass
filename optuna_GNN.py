@@ -19,22 +19,21 @@ def define_model(trial, num_features):
     return Petri_GCN(
         in_channels=num_features,
         hidden_features=trial.suggest_int("Hidden Features", 2, 16, step=2),
-        num_layers=trial.suggest_int("Number of GCN Layers", 2, 20),
-        readout_layers=trial.suggest_int("MLP Readout Layers", 2, 5),
+        num_layers=trial.suggest_int("Number of GCN Layers", 2, 50),
+        readout_layers=trial.suggest_int("MLP Readout Layers", 2, 10),
         mae=MAE
         )
 
 
 def train_model(model, optimizer, train_loader):
     model.train()
-    for epoch in trange(EPOCHS, leave=False, desc="Training loop"):
-        for graph in train_loader:
-            data, target = graph, graph.y
-            optimizer.zero_grad()
-            output = torch.flatten(model(data))
-            loss = model.loss(output, target)
-            loss.backward()
-            optimizer.step()
+    for graph in train_loader:
+        data, target = graph, graph.y
+        optimizer.zero_grad()
+        output = torch.flatten(model(data))
+        loss = model.loss(output, target)
+        loss.backward()
+        optimizer.step()
     return loss
 
 
@@ -82,16 +81,12 @@ def objective(trial):
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
 
     # Training of the model.
-    for epoch in trange(30):
+    for epoch in trange(EPOCHS, desc='Trial loop', leave=False):
         loss = train_model(model, optimizer, train_loader)
         trial.report(loss, epoch)
         # Handle pruning based on the intermediate value.
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
-
-    loss = eval_model(model, test_loader)
-    trial.report(loss, epoch)
-
     return loss
 
 

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Iterable
 
 import numpy as np
-from torch import as_tensor
+from torch import as_tensor, from_numpy
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
@@ -28,7 +28,7 @@ def __pad_node_features__(data: Iterable):
 
 def __to_data__(
     graph_info: List[np.array],
-    label: float
+    label: float,
 ) -> Data:
     return Data(
         x=as_tensor(graph_info[0]).float(),
@@ -50,6 +50,15 @@ def __to_data_reduced_features__(
         num_nodes=graph_info[0].shape[0])
 
 
+def __steady_state_data__(info: List[np.array]) -> Data:
+    return Data(
+        x=from_numpy(info[0]).float(),
+        edge_index=from_numpy(info[1]).view(2, -1).long(),
+        edge_attr=as_tensor(info[3][info[2]]).float(),
+        y=from_numpy(info[5]).float(),
+        num_nodes=info[0].shape[0])
+
+
 def get_reachability_dataset(
     source: Path,
     reduce_node_features: bool = True,
@@ -63,5 +72,13 @@ def get_reachability_dataset(
     data_iterator = list(starmap(f, data))
     loader = DataLoader(data_iterator, batch_size=batch_size, shuffle=True)
     loader.num_features = 1 if reduce_node_features else size
-
     return loader
+
+def get_steady_state_dataset(source: Path, batch_size: int = 16):
+    data = get_reachability_graphs(source)
+    size, padded_data = map(__pad_node_features__, data)
+    iterator = (__steady_state_data__(graph) for graph, _ in padded_data)
+    loader = DataLoader(iterator, batch_size=batch_size, shuffle=True)
+    loader.num_features = size
+    return loader
+    

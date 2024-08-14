@@ -38,13 +38,14 @@ class Petri_GCN(nn.Module):
             in_channels=in_channels,
             hidden_channels=hidden_features,
             num_layers=num_layers)
-        self.MLP_layer = MLPReadout(hidden_features, 1)
+        self.Readout_Layer = MLPReadout(hidden_features, 1)
         self.loss_function = F.l1_loss if mae else __relative_error__
         self.edge_attr = edge_attr
 
     def forward(self, g):
         x = self.GNN(g.x, g.edge_index, g.edge_attr)
-        return self.MLP_layer(x)
+        x = self.Readout_Layer(x)
+        return scatter(x, g.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
         return self.loss_function(scores, targets)
@@ -67,13 +68,14 @@ class Petri_SAGE(nn.Module):
         self.loss_function = F.l1_loss if mae else F.mse_loss
         self.edge_attr = edge_attr
 
-    def forward(self, batch: Batch):
-        x = batch.x
-        edge_index = batch.edge_index
-        edge_attr = batch.edge_attr if self.edge_attr else None
+    def forward(self, g):
+        x = g.x
+        edge_index = g.edge_index
+        edge_attr = g.edge_attr if self.edge_attr else None
 
         x = self.GNN(x, edge_index, edge_attr)
-        return self.Readout_Layer(x)
+        x = self.Readout_Layer(x)
+        return scatter(x, g.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
         return self.loss_function(scores, targets)
@@ -95,7 +97,7 @@ class Petri_Cheb(nn.Module):
             for _ in range(num_layers)])
 
         self.layers = nn.ModuleList(layers)
-        self.readout = MLPReadout(hidden_features, 1, readout_layers)
+        self.Readout_Layer = MLPReadout(hidden_features, 1, readout_layers)
         self.loss_function = F.l1_loss if mae else __relative_error__
         self.edge_attr = edge_attr
 
@@ -107,7 +109,8 @@ class Petri_Cheb(nn.Module):
         y = self.layers[0](x, edge_index, edge_attr)
         for layer in self.layers[1:]:
             y = layer(y, edge_index, edge_attr)
-        return self.readout(y)
+        y = self.Readout_Layer(x)
+        return scatter(y, batch.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
         return self.loss_function(scores, targets)
@@ -126,7 +129,7 @@ class Petri_GraphConv(nn.Module):
             layers.append(GraphConv(hidden_features, hidden_features))
 
         self.layers = nn.ModuleList(layers)
-        self.readout = MLPReadout(hidden_features, 1, readout_layers)
+        self.Readout_Layer = MLPReadout(hidden_features, 1, readout_layers)
         self.loss_function = F.l1_loss if mae else __relative_error__
 
     def forward(self, g):
@@ -137,7 +140,8 @@ class Petri_GraphConv(nn.Module):
         y = self.layers[0](x, edge_index, edge_attr)
         for layer in self.layers[1:]:
             y = layer(y, edge_index, edge_attr)
-        return self.readout(y)
+        y = self.Readout_Layer(x)
+        return scatter(y, g.batch, dim=0, reduce='mean')
 
     def loss(self, scores, targets):
         return self.loss_function(scores, targets)

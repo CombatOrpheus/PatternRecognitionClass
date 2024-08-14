@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Iterable
 
-import numpy
+import numpy as np
 
 # This modules assumes that the files being used have the following structure:
 # petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are
@@ -14,13 +14,15 @@ import numpy
 # reachable marking graph.
 # spn_steadypro: The steady state probability.
 # spn_markdens: The token probability density function.
-# spn_mu: The average number of tokens.
+# spn_all_mus: The average number of tokens for each place.
+# spn_mu: The average number of tokens for the whole networ.
 #
 # The original data is available in https://github.com/netlearningteam/SPN-Benchmark-DS
-# Converted from a giant list into one JSON element per line using the command `jq -c '.[]' file`.
+# Converted from a giant list into one JSON element per line using the command
+# `jq -c '.[]' file`.
 
 
-def get_petri_graph(pn: numpy.array):
+def get_petri_graph(pn: np.array):
     """Convert a Petri Net matrix into graph information
     Parameters
     ----------
@@ -43,14 +45,14 @@ def get_petri_graph(pn: numpy.array):
     # place -> transition
     # Find the edges and correct indices
     A_in = pn[:, 0:num_transitions]
-    pt_edges = numpy.argwhere(A_in)
-    pt_edges += numpy.array([0, num_places])
+    pt_edges = np.argwhere(A_in)
+    pt_edges += np.array([0, num_places])
 
     # transition -> place
     # Find the edges, correct indices and swap columns
     A_out = pn[:, num_transitions:-1]
-    tp_edges = numpy.argwhere(A_out)
-    tp_edges += numpy.array([0, num_places])
+    tp_edges = np.argwhere(A_out)
+    tp_edges += np.array([0, num_places])
     tp_edges[:, [0, 1]] = tp_edges[:, [1, 0]]
 
     return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_in - A_out)
@@ -65,8 +67,8 @@ def get_data(source_file: Path) -> Iterable:
     with open(source_file) as f:
         for data in map(json.loads, f):
             elements = list(data.values())
-            petri_net = numpy.array(elements[0])
-            reachability_graph = list(map(numpy.array, elements[1:-1]))
+            petri_net = np.array(elements[0])
+            reachability_graph = list(map(np.array, elements[1:-1]))
             spn_mu = elements[-1]
             yield get_petri_graph(petri_net), reachability_graph, spn_mu
 
@@ -74,21 +76,36 @@ def get_data(source_file: Path) -> Iterable:
 def get_petri_nets(source_file: Path) -> Iterable:
     with open(source_file) as f:
         for data in map(json.loads, f):
-            net = numpy.array(data['petri_net'])
+            net = np.array(data['petri_net'])
             yield get_petri_graph(net)
 
 
-def get_reachability_graphs(source_file: Path) -> Iterable:
+def get_average_tokens(source: Path, network: bool = True) -> Iterable:
     """Return an iterator with the reachability graphs for each Petri Net in
     the source file.
-
+    Parameters
+    ----------
+        source: A Path to the file
+        network: Whether to return the average number of tokens for the whole network (True) or for each place (False).
     Returns
     -------
-        iterable: An iterable that yields the reachability graph information
+        iterable: An iterable that yields the graph information
         and the true label for this graph.
     """
-    with open(source_file) as f:
+    with open(source) as f:
         source = map(json.loads, f)
         for elem in source:
-            data = list(elem.values())[1:-1]
-            yield list(map(numpy.array, data)), elem['spn_mu']
+            data = list(elem.values())
+            graph_data = [np.array(info) for info in data[1:4]]
+            label = data[-1] if network else data[-2]
+            yield graph_data, label
+
+
+def get_steady_state(source: Path) -> Iterable:
+    with open(source) as f:
+        source = map(json.loads, f)
+        for elem in source:
+            data = list(elem.values())
+            graph_data = [np.array(info) for info in data[1:4]]
+            label = data[5]
+            yield graph_data, label

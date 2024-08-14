@@ -1,84 +1,72 @@
-from itertools import starmap
 from pathlib import Path
-from typing import List, Iterable
+from typing import List
 
 import numpy as np
+import torch
+import torch.nn.functional as F
+from torch import Tensor
 from torch import as_tensor, from_numpy
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
-from .data_parser import get_reachability_graphs
+from .data_parser import get_average_tokens, get_steady_state
 
 
-def __pad_node_features__(data: Iterable):
-    info = []
-    labels = []
-    for data, label in data:
-        info.append(data)
-        labels.append(label)
-    shapes = [np.shape(graph[0]) for graph in info]
-    max_size = max(x[1] for x in shapes)
-    sizes_to_pad = ((x[0], max_size - x[1]) for x in shapes)
-    padding = map(np.zeros, sizes_to_pad)
-    graphs = (x[0] for x in info)
-    padded_data = map(np.hstack, zip(graphs, padding))
-    new_info = [[padded_data, *graph[1:]] for graph in info]
-    return max_size, zip(new_info, labels)
+def __pad_features__(info: List[np.array], pad_to: int) -> Tensor:
+    features = info[0]
+    size = np.shape(features)[1]
+    tensor = from_numpy(features)
+    return [F.pad(tensor, (pad_to - size, 0)), *info[1:]]
+
+
+def __reduce_features__(info: List[np.array]):
+    features = from_numpy(info[0])
+    return [torch.sum(features), *info[1:]]
 
 
 def __to_data__(
-    graph_info: List[np.array],
-    label: float,
+    info: List[np.array],
+    label,
 ) -> Data:
     return Data(
-        x=as_tensor(graph_info[0]).float(),
-        edge_index=as_tensor(graph_info[1]).view(2, -1).long(),
-        edge_attr=as_tensor(graph_info[3][graph_info[2]]).float(),
+        x=info[0],
+        edge_index=as_tensor(info[1]).view(2, -1).long(),
+        edge_attr=as_tensor(info[3][info[2]]).float(),
         y=as_tensor(label),
-        num_nodes=graph_info[0].shape[0])
+        num_nodes=info[0].shape[0])
 
 
-def __to_data_reduced_features__(
-        graph_info: List[np.array],
-        label: float
-) -> Data:
+def __steady_state_data__(info: List) -> Data:
     return Data(
-        x=as_tensor(np.sum(graph_info[0], axis=1)).view(-1, 1).float(),
-        edge_index=as_tensor(graph_info[1]).view(2, -1).long(),
-        edge_attr=as_tensor(graph_info[3][graph_info[2]]).float(),
-        y=as_tensor(label),
-        num_nodes=graph_info[0].shape[0])
-
-
-def __steady_state_data__(info: List[np.array]) -> Data:
-    return Data(
-        x=from_numpy(info[0]).float(),
+        x=info[0],
         edge_index=from_numpy(info[1]).view(2, -1).long(),
         edge_attr=as_tensor(info[3][info[2]]).float(),
         y=from_numpy(info[5]).float(),
         num_nodes=info[0].shape[0])
 
 
-def get_reachability_dataset(
+def get_average_tokens_dataset(
     source: Path,
-    reduce_node_features: bool = True,
+    reduce_features: bool = True,
     batch_size=16
 ) -> DataLoader:
-    data = get_reachability_graphs(source)
-    f = __to_data_reduced_features__ if reduce_node_features else __to_data__
-    if not reduce_node_features:
-        size, data = __pad_node_features__(data)
+    data = list(get_average_tokens(source))
+    size = 1
+    if reduce_features:
+        iterator = [(__reduce_features__(graph), label) for graph, label in data]
+    else:
+        size = max(info[0].shape[1] for info, _ in data)
+        iterator = [(__pad_features__(graph, size), label) for graph, label in data]
 
-    data_iterator = list(starmap(f, data))
-    loader = DataLoader(data_iterator, batch_size=batch_size, shuffle=True)
-    loader.num_features = 1 if reduce_node_features else size
-    return loader
-
-def get_steady_state_dataset(source: Path, batch_size: int = 16):
-    data = get_reachability_graphs(source)
-    size, padded_data = map(__pad_node_features__, data)
-    iterator = (__steady_state_data__(graph) for graph, _ in padded_data)
     loader = DataLoader(iterator, batch_size=batch_size, shuffle=True)
     loader.num_features = size
     return loader
-    
+
+
+def get_steady_state_dataset(source: Path, batch_size: int = 16):
+    data = list(get_steady_state(source))
+    size = max(info[0].shape[1] for info, _ in data)
+    iterator = [(__steady_state_data__(graph), label) for graph, label in data]
+    loader = DataLoader(iterator, batch_size=batch_size, shuffle=True)
+    loader.num_features = size
+    return loader

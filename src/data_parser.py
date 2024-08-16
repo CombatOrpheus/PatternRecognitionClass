@@ -96,7 +96,7 @@ def get_average_tokens(source: Path, network: bool = True) -> Iterable:
         source = map(json.loads, f)
         for elem in source:
             data = list(elem.values())
-            graph_data = [np.array(info) for info in data[1:4]]
+            graph_data = [np.array(info) for info in data[1:5]]
             label = data[-1] if network else data[-2]
             yield graph_data, label
 

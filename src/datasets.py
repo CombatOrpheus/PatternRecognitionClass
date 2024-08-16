@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List
+from itertools import starmap
 
 import numpy as np
 import torch
@@ -15,13 +16,13 @@ from .data_parser import get_average_tokens, get_steady_state
 def __pad_features__(info: List[np.array], pad_to: int) -> Tensor:
     features = info[0]
     size = np.shape(features)[1]
-    tensor = from_numpy(features)
+    tensor = from_numpy(features).float()
     return [F.pad(tensor, (pad_to - size, 0)), *info[1:]]
 
 
 def __reduce_features__(info: List[np.array]):
-    features = from_numpy(info[0])
-    return [torch.sum(features), *info[1:]]
+    features = from_numpy(info[0]).float()
+    return [torch.sum(features, 1, keepdim=True), *info[1:]]
 
 
 def __to_data__(
@@ -50,15 +51,19 @@ def get_average_tokens_dataset(
     reduce_features: bool = True,
     batch_size=16
 ) -> DataLoader:
-    data = list(get_average_tokens(source))
+    data = get_average_tokens(source)
     size = 1
     if reduce_features:
-        iterator = [(__reduce_features__(graph), label) for graph, label in data]
+        iterator = ((__reduce_features__(graph), label) for graph, label in data)
     else:
+        data = list(data)
         size = max(info[0].shape[1] for info, _ in data)
-        iterator = [(__pad_features__(graph, size), label) for graph, label in data]
-
-    loader = DataLoader(iterator, batch_size=batch_size, shuffle=True)
+        iterator = ((__pad_features__(graph, size), label) for graph, label in data)
+        
+    loader = DataLoader(
+        list(starmap(__to_data__, iterator)),
+        batch_size=batch_size,
+        shuffle=True)
     loader.num_features = size
     return loader
 
@@ -66,7 +71,10 @@ def get_average_tokens_dataset(
 def get_steady_state_dataset(source: Path, batch_size: int = 16):
     data = list(get_steady_state(source))
     size = max(info[0].shape[1] for info, _ in data)
-    iterator = [(__steady_state_data__(graph), label) for graph, label in data]
-    loader = DataLoader(iterator, batch_size=batch_size, shuffle=True)
+    iterator = ((__steady_state_data__(graph), label) for graph, label in data)
+    loader = DataLoader(
+        list(starmap(__to_data__, iterator)),
+        batch_size=batch_size,
+        shuffle=True)
     loader.num_features = size
     return loader

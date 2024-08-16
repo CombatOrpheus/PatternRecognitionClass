@@ -7,20 +7,21 @@ import torch.utils.data
 from optuna.trial import TrialState
 from tqdm import trange
 
-from src.datasets import get_reachability_dataset
+from src.datasets import get_average_tokens_dataset
 from src.models import Petri_GCN
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 EPOCHS = 100
 MAE = True
+REDUCE_FEATURES = False
 
 
 def define_model(trial, num_features):
     return Petri_GCN(
         in_channels=num_features,
         hidden_features=trial.suggest_int("Hidden Features", 2, 16, step=2),
-        num_layers=trial.suggest_int("Number of GCN Layers", 2, 50),
-        readout_layers=trial.suggest_int("MLP Readout Layers", 2, 10),
+        num_layers=trial.suggest_int("Number of GCN Layers", 2, 20),
+        readout_layers=trial.suggest_int("MLP Readout Layers", 2, 5),
         mae=MAE
         )
 
@@ -56,14 +57,14 @@ def get_data(trial):
 
     batch_size = trial.suggest_int("Batch Size", 16, 128, step=4)
 
-    train_dataset = get_reachability_dataset(
+    train_dataset = get_average_tokens_dataset(
         train_data,
-        reduce_node_features=True,
+        reduce_features=REDUCE_FEATURES,
         batch_size=batch_size)
 
-    test_dataset = get_reachability_dataset(
+    test_dataset = get_average_tokens_dataset(
         test_data,
-        reduce_node_features=True,
+        reduce_features=REDUCE_FEATURES,
         batch_size=batch_size)
     return train_dataset, test_dataset
 
@@ -92,7 +93,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=200, timeout=6000)
+    study.optimize(objective, n_trials=300, timeout=6000)
 
     pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
     complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])

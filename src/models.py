@@ -6,6 +6,9 @@ from torch_geometric.nn import GCN, MLP, ChebConv, GraphSAGE, GraphConv
 from torch_geometric.utils import scatter
 
 
+LAYER_DICT = {'GCN': GCN, 'GraphConv': GraphConv}
+LAYERS = list(LAYER_DICT.keys())
+
 def __relative_error__(input: Tensor, target: Tensor):
     return mean(F.l1_loss(input, target, reduction='none')/target) * 100
 

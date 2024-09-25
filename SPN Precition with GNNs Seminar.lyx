@@ -414,15 +414,11 @@ Redes de Petri
 
 \begin_deeper
 \begin_layout FrameSubtitle
-Desafios
+Desafios (Redes de Petri)
 \end_layout
 
 \begin_layout Itemize
 Explosão Combinatorial;
-\end_layout
-
-\begin_layout Itemize
-Disponibilidade de Ferramentas;
 \end_layout
 
 \begin_layout Itemize
@@ -442,8 +438,105 @@ Capacidade de Modelagem vs.
 
 \end_layout
 
-\begin_layout Section
-Problema
+\begin_layout Frame
+\begin_inset Argument 4
+status open
+
+\begin_layout Plain Layout
+Redes de Petri
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_deeper
+\begin_layout FrameSubtitle
+Desafios (Extensões)
+\end_layout
+
+\begin_layout Itemize
+Certas extensões tem um processo de análise complexo:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Redes Coloridas introduzem uma nova álgebra,
+ dificultando a simulação e análise;
+\end_layout
+
+\begin_layout Itemize
+Redes Contínuas reduzem o espaço de estados ao custo de menor interpretabilidade e precisão;
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Extensões não são tão generalistas;
+\end_layout
+
+\begin_layout Itemize
+Combinar extensões diferentes é um processo complexo.
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+\begin_inset Separator plain
+\end_inset
+
+
+\end_layout
+
+\begin_layout Frame
+\begin_inset Argument 4
+status open
+
+\begin_layout Plain Layout
+Redes de Petri
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_deeper
+\begin_layout FrameSubtitle
+Desafios (Programas)
+\end_layout
+
+\begin_layout Itemize
+Desenvolvimento é custoso e demanda conhecimentos específicos:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Efetivamente limitado a grupos de pesquisa;
+\end_layout
+
+\begin_layout Itemize
+Majoritariamente realizado por Doutores e Pós-Docs;
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Sujeito as opiniões dos autores;
+\end_layout
+
+\begin_layout Itemize
+Limitações nos modelos/extensões suportadas;
+\end_layout
+
+\begin_layout Itemize
+Código-fonte não disponível ou desatualizado.
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+\begin_inset Separator plain
+\end_inset
+
+
 \end_layout
 
 \begin_layout Frame
@@ -547,7 +640,7 @@ Sistemas sem distribuição estacionária.
 status open
 
 \begin_layout Plain Layout
-Projeto
+Proposta da Pesquisa
 \end_layout
 
 \end_inset
@@ -557,11 +650,15 @@ Projeto
 
 \begin_deeper
 \begin_layout Itemize
-Viabilidade de GNNs para análise de SPNs;
+Solucionar Redes de Petri com GNNs;
 \end_layout
 
 \begin_layout Itemize
-Validar diferentes operadores gráficos.
+Produzir modelos com baixo custo computacional;
+\end_layout
+
+\begin_layout Itemize
+Melhorar o programa para geração de dados.
 \end_layout
 
 \end_deeper
@@ -583,6 +680,10 @@ Trabalhos Relacionados
 \end_layout
 
 \begin_deeper
+\begin_layout FrameSubtitle
+Principais Trabalhos
+\end_layout
+
 \begin_layout Itemize
 Manutenção Preditivas em fazendas eólicas 
 \emph on
@@ -643,6 +744,45 @@ literal "false"
 \end_inset
 
 .
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+\begin_inset Separator plain
+\end_inset
+
+
+\end_layout
+
+\begin_layout Frame
+\begin_inset Argument 4
+status open
+
+\begin_layout Plain Layout
+Trabalhos Relacionados
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_deeper
+\begin_layout FrameSubtitle
+Discussão
+\end_layout
+
+\begin_layout Itemize
+Poucos trabalhos na linha específica de pesquisa ;
+\end_layout
+
+\begin_layout Itemize
+Trabalhos focam em sistemas híbridos (Petri + Aprendizagem Profunda);
+\end_layout
+
+\begin_layout Itemize
+Solução de problemas pontuais,
+ de mais alto nível.
 \end_layout
 
 \end_deeper
@@ -1422,7 +1562,11 @@ literal "false"
 \end_layout
 
 \begin_layout Itemize
-Geração dos Grafos de Alcançabilidade.
+Geração dos Grafos de Alcançabilidade através de GNNs;
+\end_layout
+
+\begin_layout Itemize
+Análise direta das Redes de Petri.
 \end_layout
 
 \end_deeper

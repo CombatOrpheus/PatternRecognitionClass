@@ -92,7 +92,7 @@
 \begin_body
 
 \begin_layout Title
-Aplicabilidade de GNNs para Avalição de Redes de Petri Estocásticas
+Avaliando Redes de Petri Estocásticas com GNNs
 \end_layout
 
 \begin_layout Author
@@ -606,7 +606,7 @@ Problemas
 \end_layout
 
 \begin_layout Itemize
-Análise se baseia no grafo de alcançabilidade:
+Análise se baseia no grafo de alcançabilidade ou simulação:
 \end_layout
 
 \begin_layout Itemize
@@ -640,6 +640,50 @@ Sistemas sem distribuição estacionária.
 status open
 
 \begin_layout Plain Layout
+GNNs
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_deeper
+\begin_layout FrameSubtitle
+
+\emph on
+Graph Neural Networks
+\end_layout
+
+\begin_layout Itemize
+Capaz de aprender diretamente sobre grafos;
+\end_layout
+
+\begin_layout Itemize
+Aceitam grafos homogêneos ou heterogêneos;
+\end_layout
+
+\begin_layout Itemize
+Características adequadas para solucionar Redes de Petri;
+\end_layout
+
+\begin_layout Itemize
+Bons resultados e custo computacional razoável comparado a outras abordagens.
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+\begin_inset Separator plain
+\end_inset
+
+
+\end_layout
+
+\begin_layout Frame
+\begin_inset Argument 4
+status open
+
+\begin_layout Plain Layout
 Proposta da Pesquisa
 \end_layout
 
@@ -650,11 +694,15 @@ Proposta da Pesquisa
 
 \begin_deeper
 \begin_layout Itemize
-Solucionar Redes de Petri com GNNs;
+Solucionar Redes de Petri Estocásticas com GNNs;
 \end_layout
 
 \begin_layout Itemize
 Produzir modelos com baixo custo computacional;
+\end_layout
+
+\begin_layout Itemize
+Avaliar a possibilidade de aplicar GNNs diretamente sobre Redes de Petri;
 \end_layout
 
 \begin_layout Itemize
@@ -773,21 +821,21 @@ Discussão
 \end_layout
 
 \begin_layout Itemize
-Poucos trabalhos na linha específica de pesquisa ;
-\end_layout
-
-\begin_layout Itemize
 Trabalhos focam em sistemas híbridos (Petri + Aprendizagem Profunda);
 \end_layout
 
 \begin_layout Itemize
 Solução de problemas pontuais,
- de mais alto nível.
+ de mais alto nível;
+\end_layout
+
+\begin_layout Itemize
+Poucos trabalhos na linha de pesquisa proposta.
 \end_layout
 
 \end_deeper
 \begin_layout Section
-Modelo Híbrido
+Avaliação Inicial
 \end_layout
 
 \begin_layout Frame
@@ -795,7 +843,7 @@ Modelo Híbrido
 status open
 
 \begin_layout Plain Layout
-Problema
+Experimento Inicial
 \end_layout
 
 \end_inset
@@ -810,7 +858,7 @@ Número médio de tokens na rede:
 
 \begin_deeper
 \begin_layout Itemize
-Informações encodificadas no grafo;
+Informações codificadas no grafo;
 \end_layout
 
 \begin_layout Itemize
@@ -1354,138 +1402,6 @@ Resultados
 status open
 
 \begin_layout Plain Layout
-Testes Estatísticos
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_deeper
-\begin_layout FrameSubtitle
-Diferença Estatística entre Modelos
-\end_layout
-
-\begin_layout Standard
-\begin_inset Float figure
-placement document
-alignment document
-wide false
-sideways false
-status collapsed
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset Graphics
-	filename Images/Significance Plot.png
-	width 80text%
-	height 80pheight%
-	keepAspectRatio
-
-\end_inset
-
-
-\begin_inset Caption Standard
-
-\begin_layout Plain Layout
-Teste de Friedman
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\end_deeper
-\begin_layout Standard
-\begin_inset Separator plain
-\end_inset
-
-
-\end_layout
-
-\begin_layout Frame
-\begin_inset Argument 4
-status open
-
-\begin_layout Plain Layout
-Testes Estatísticos
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_deeper
-\begin_layout FrameSubtitle
-Rank dos Modelos
-\end_layout
-
-\begin_layout Standard
-\begin_inset Float figure
-placement document
-alignment document
-wide false
-sideways false
-status open
-
-\begin_layout Plain Layout
-\begin_inset Graphics
-	filename Images/Critical diagram pretty.png
-	width 80text%
-	height 80pheight%
-	keepAspectRatio
-
-\end_inset
-
-
-\begin_inset Caption Standard
-
-\begin_layout Plain Layout
-Teste 
-\emph on
-Post-Hoc
-\emph default
- Connover
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\end_deeper
-\begin_layout Standard
-\begin_inset Separator plain
-\end_inset
-
-
-\end_layout
-
-\begin_layout Frame
-\begin_inset Argument 4
-status open
-
-\begin_layout Plain Layout
 Discussão
 \end_layout
 
@@ -1496,19 +1412,35 @@ Discussão
 
 \begin_deeper
 \begin_layout Itemize
-Modelos performam bem;
-\end_layout
-
-\begin_layout Itemize
-Tempo de treinamento curto:
+Boa relação desempenho x tempo de treinamento:
 \end_layout
 
 \begin_deeper
 \begin_layout Itemize
-30 execuções em 8 minutos.
+Resultados próximos ao modelo proposto em 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "Guang2021"
+literal "false"
+
+\end_inset
+
+ utilizando menos camadas;
+\end_layout
+
+\begin_layout Itemize
+Tempo de treinamento menor (30 minutos x 1 hora);
+\end_layout
+
+\begin_layout Itemize
+Execução em CPU é viável.
 \end_layout
 
 \end_deeper
+\begin_layout Itemize
+GNNs provaram ser adequadas durante a análise inicial;
+\end_layout
+
 \end_deeper
 \begin_layout Standard
 \begin_inset Separator plain
@@ -1531,6 +1463,14 @@ Trabalhos Futuros
 \end_layout
 
 \begin_deeper
+\begin_layout Itemize
+Validação com conjuntos diferentes;
+\end_layout
+
+\begin_layout Itemize
+Avaliação da influência de características das Redes Estocásticas no processo de treinamento;
+\end_layout
+
 \begin_layout Itemize
 Análise de métricas mais complexas:
 \end_layout

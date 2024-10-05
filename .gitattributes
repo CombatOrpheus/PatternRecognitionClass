@@ -3,8 +3,6 @@ Data/GridData_DS3_train_data.processed filter=lfs diff=lfs merge=lfs -text
 Data/GridData_DS4_test_data.processed filter=lfs diff=lfs merge=lfs -text
 Data/GridData_DS4_train_data.processed filter=lfs diff=lfs merge=lfs -text
 Data/GridData_DS5_test_data.processed filter=lfs diff=lfs merge=lfs -text
-Data/RandData filter=lfs diff=lfs merge=lfs -text
-Data/GridData filter=lfs diff=lfs merge=lfs -text
 Data/GridData_DS1_test_data.processed filter=lfs diff=lfs merge=lfs -text
 Data/GridData_DS1_train_data.processed filter=lfs diff=lfs merge=lfs -text
 Data/GridData_DS2_test_data.processed filter=lfs diff=lfs merge=lfs -text

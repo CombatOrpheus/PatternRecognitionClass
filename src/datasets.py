@@ -34,7 +34,8 @@ def __to_data__(
         edge_index=as_tensor(info[1]).view(2, -1).long(),
         edge_attr=as_tensor(info[3][info[2]]).float(),
         y=as_tensor(label),
-        num_nodes=info[0].shape[0])
+        num_nodes=info[0].shape[0],
+    )
 
 
 def __steady_state_data__(info: List) -> Data:
@@ -43,13 +44,12 @@ def __steady_state_data__(info: List) -> Data:
         edge_index=from_numpy(info[1]).view(2, -1).long(),
         edge_attr=as_tensor(info[3][info[2]]).float(),
         y=from_numpy(info[5]).float(),
-        num_nodes=info[0].shape[0])
+        num_nodes=info[0].shape[0],
+    )
 
 
 def get_average_tokens_dataset(
-    source: Path,
-    reduce_features: bool = True,
-    batch_size=16
+    source: Path, reduce_features: bool = True, batch_size=16
 ) -> DataLoader:
     data = get_average_tokens(source)
     size = 1
@@ -59,11 +59,10 @@ def get_average_tokens_dataset(
         data = list(data)
         size = max(info[0].shape[1] for info, _ in data)
         iterator = ((__pad_features__(graph, size), label) for graph, label in data)
-        
+
     loader = DataLoader(
-        list(starmap(__to_data__, iterator)),
-        batch_size=batch_size,
-        shuffle=True)
+        list(starmap(__to_data__, iterator)), batch_size=batch_size, shuffle=True
+    )
     loader.num_features = size
     return loader
 
@@ -73,8 +72,7 @@ def get_steady_state_dataset(source: Path, batch_size: int = 16):
     size = max(info[0].shape[1] for info, _ in data)
     iterator = ((__steady_state_data__(graph), label) for graph, label in data)
     loader = DataLoader(
-        list(starmap(__to_data__, iterator)),
-        batch_size=batch_size,
-        shuffle=True)
+        list(starmap(__to_data__, iterator)), batch_size=batch_size, shuffle=True
+    )
     loader.num_features = size
     return loader

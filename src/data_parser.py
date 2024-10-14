@@ -40,7 +40,7 @@ def get_petri_graph(pn: np.array):
     num_places, num_transitions = pn.shape
     num_transitions = num_transitions // 2
     places = list(range(num_places))
-    transitions = (list(range(num_places, num_places+num_transitions)))
+    transitions = list(range(num_places, num_places + num_transitions))
 
     # place -> transition
     # Find the edges and correct indices
@@ -76,7 +76,7 @@ def get_data(source_file: Path) -> Iterable:
 def get_petri_nets(source_file: Path) -> Iterable:
     with open(source_file) as f:
         for data in map(json.loads, f):
-            net = np.array(data['petri_net'])
+            net = np.array(data["petri_net"])
             yield get_petri_graph(net)
 
 

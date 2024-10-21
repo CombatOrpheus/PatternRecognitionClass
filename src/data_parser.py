@@ -55,7 +55,7 @@ def get_petri_graph(pn: np.array):
     tp_edges += np.array([0, num_places])
     tp_edges[:, [0, 1]] = tp_edges[:, [1, 0]]
 
-    return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_in - A_out)
+    return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_out - A_in)
 
 
 def get_data(source_file: Path) -> Iterable:
@@ -97,6 +97,7 @@ def get_average_tokens(source: Path, network: bool = True) -> Iterable:
         for elem in source:
             data = list(elem.values())
             graph_data = [np.array(info) for info in data[1:5]]
+            graph_data[0] = get_petri_graph(graph_data[0])
             label = data[-1] if network else data[-2]
             yield graph_data, label
 
@@ -107,5 +108,6 @@ def get_steady_state(source: Path) -> Iterable:
         for elem in source:
             data = list(elem.values())
             graph_data = [np.array(info) for info in data[1:4]]
+            graph_data[0] = get_petri_graph(graph_data[0])
             label = data[5]
             yield graph_data, label

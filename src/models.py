@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor, mean
 from torch_geometric.data import Batch
-from torch_geometric.nn import GCN, MLP, ChebConv, GraphSAGE, GraphConv
+from torch_geometric.nn import GCN, MLP, GraphConv
 from torch_geometric.utils import scatter
 
 
@@ -33,7 +33,7 @@ class Petri_GCN(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        hidden_features: int,
+        hidden_channels: int,
         num_layers: int,
         readout_layers: int = 2,
         mae: bool = True,
@@ -42,10 +42,10 @@ class Petri_GCN(nn.Module):
         super().__init__()
         self.GNN = GCN(
             in_channels=in_channels,
-            hidden_channels=hidden_features,
+            hidden_channels=hidden_channels,
             num_layers=num_layers,
         )
-        self.Readout_Layer = MLPReadout(hidden_features, 1)
+        self.Readout_Layer = MLPReadout(hidden_channels, 1)
         self.loss_function = F.l1_loss if mae else __relative_error__
         self.edge_attr = edge_attr
 
@@ -62,18 +62,18 @@ class Petri_GraphConv(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        hidden_features: int,
+        hidden_channels: int,
         num_layers: int,
         readout_layers: int = 2,
         mae: bool = True,
     ):
         super().__init__()
-        layers = [GraphConv(in_channels, hidden_features)]
+        layers = [GraphConv(in_channels, hidden_channels)]
         for _ in range(num_layers):
-            layers.append(GraphConv(hidden_features, hidden_features))
+            layers.append(GraphConv(hidden_channels, hidden_channels))
 
         self.layers = nn.ModuleList(layers)
-        self.Readout_Layer = MLPReadout(hidden_features, 1, readout_layers)
+        self.Readout_Layer = MLPReadout(hidden_channels, 1, readout_layers)
         self.loss_function = F.l1_loss if mae else __relative_error__
 
     def forward(self, g):
@@ -86,6 +86,31 @@ class Petri_GraphConv(nn.Module):
             y = layer(y, edge_index, edge_attr)
         y = self.Readout_Layer(x)
         return scatter(y, g.batch, dim=0, reduce="mean")
+
+    def loss(self, scores, targets):
+        return self.loss_function(scores, targets)
+
+
+class Petri_PerPlace_Average(nn.Module):
+    def __init__(
+        self, in_channels: int, hidden_channels: int, num_layers: int, mae: bool = True
+    ):
+        super().__init__()
+        self.GNN = GCN(
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            num_layers=num_layers,
+            out_channels=1,
+        )
+        self.loss_function = F.l1_loss if mae else __relative_error__
+
+    def forward(self, g):
+        x = g.x
+        edge_index = g.edge_index
+        edge_attr = g.edge_attr
+
+        x = self.GNN(x, edge_index, edge_attr)
+        return scatter(x, g.batch, dim=0, reduce="mean")
 
     def loss(self, scores, targets):
         return self.loss_function(scores, targets)

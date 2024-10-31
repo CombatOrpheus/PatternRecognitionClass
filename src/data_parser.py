@@ -44,7 +44,7 @@ def get_petri_graph(pn: np.array):
 
     # place -> transition
     # Find the edges and correct indices
-    A_in = pn[:, 0:num_transitions]
+    A_in = pn[:, :num_transitions]
     pt_edges = np.argwhere(A_in)
     pt_edges += np.array([0, num_places])
 
@@ -58,23 +58,23 @@ def get_petri_graph(pn: np.array):
     return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_out - A_in)
 
 
-def get_data(source_file: Path) -> Iterable:
+def get_data(source: Path) -> Iterable:
     """
     Parameters
     ----------
         source_file: A valid Path
     """
-    with open(source_file) as f:
+    with open(source) as f:
         for data in map(json.loads, f):
             elements = list(data.values())
             petri_net = np.array(elements[0])
             reachability_graph = list(map(np.array, elements[1:-1]))
             spn_mu = elements[-1]
-            yield get_petri_graph(petri_net), reachability_graph, spn_mu
+            yield petri_net, reachability_graph, spn_mu
 
 
-def get_petri_nets(source_file: Path) -> Iterable:
-    with open(source_file) as f:
+def get_petri_nets(source: Path) -> Iterable:
+    with open(source) as f:
         for data in map(json.loads, f):
             net = np.array(data["petri_net"])
             yield get_petri_graph(net)

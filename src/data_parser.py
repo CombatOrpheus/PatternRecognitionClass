@@ -22,42 +22,6 @@ import numpy as np
 # `jq -c '.[]' file`.
 
 
-def get_petri_graph(pn: np.array):
-    """Convert a Petri Net matrix into graph information
-    Parameters
-    ----------
-        pn: A Petri Net represented as a compound matrix [A-, A+, M_0]
-    Returns
-    -------
-        A 6-tuple containing:
-            The list of places
-            The list of transitions
-            Place -> transition pairs
-            Transition -> places pairs
-            Initial marking of the Petri Net
-            Petri Net incidence matrix (A_in - A_out)
-    """
-    num_places, num_transitions = pn.shape
-    num_transitions = num_transitions // 2
-    places = list(range(num_places))
-    transitions = list(range(num_places, num_places + num_transitions))
-
-    # place -> transition
-    # Find the edges and correct indices
-    A_in = pn[:, :num_transitions]
-    pt_edges = np.argwhere(A_in)
-    pt_edges += np.array([0, num_places])
-
-    # transition -> place
-    # Find the edges, correct indices and swap columns
-    A_out = pn[:, num_transitions:-1]
-    tp_edges = np.argwhere(A_out)
-    tp_edges += np.array([0, num_places])
-    tp_edges[:, [0, 1]] = tp_edges[:, [1, 0]]
-
-    return (places, transitions, pt_edges, tp_edges, pn[:, -1], A_out - A_in)
-
-
 def get_data(source: Path) -> Iterable:
     """
     Parameters

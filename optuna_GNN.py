@@ -19,7 +19,7 @@ REDUCE_FEATURES = False
 def define_model(trial, num_features):
     return Petri_GCN(
         in_channels=num_features,
-        hidden_features=trial.suggest_int("Hidden Features", 2, 16, step=2),
+        hidden_channels=trial.suggest_int("Hidden Features", 2, 16, step=2),
         num_layers=trial.suggest_int("Number of GCN Layers", 2, 20),
         readout_layers=trial.suggest_int("MLP Readout Layers", 2, 5),
         mae=MAE

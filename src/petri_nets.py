@@ -1,6 +1,6 @@
 import numpy as np
 
-from typing import *
+from typing import List, Tuple
 
 
 def to_incidence_matrix(pn: np.array) -> np.array:

@@ -40,11 +40,8 @@ def train_model(model, optimizer, train_loader):
 
 def eval_model(model, valid_loader):
     model.eval()
-    pred = []
     actual = torch.tensor([graph.y for graph in valid_loader.dataset])
-    for graph in valid_loader:
-        pred.extend(model(graph).tolist())
-
+    pred = [model(graph).tolist() for graph in valid_loader]
     pred = torch.tensor(pred)
     pred = torch.flatten(pred)
 
@@ -91,9 +88,36 @@ def objective(trial):
     return loss
 
 
+def detailed_objective(trial):
+    train_loader, test_loader = get_data(trial)
+    model = define_model(trial, train_loader.num_features).to(DEVICE)
+
+    optimizer_name = trial.suggest_categorical(
+        "optimizer",
+        ["Adam", "RMSprop", "SGD"])
+    lr = trial.suggest_float("Learning Rate", 1e-5, 1e-1, log=True)
+    optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
+
+    # Training of the model.
+    for epoch in trange(EPOCHS, desc='Trial loop', leave=False):
+        loss = train_model(model, optimizer, train_loader)
+        trial.report(loss, epoch)
+
+    results = {}
+    datasets = Path('Data').glob('*all*')
+    for dataset in datasets:
+        data = get_average_tokens_dataset(dataset, reduce_features=REDUCE_FEATURES)
+        actual = torch.tensor(([graph.y for graph in data]))
+        pred = [model(graph).tolist() for graph in data]
+        pred = torch.tensor(pred)
+        pred = torch.flatten(pred)
+
+        results['dataset'] = model.loss(pred, actual)
+
+
 if __name__ == "__main__":
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=300, timeout=6000)
+    study.optimize(objective, n_trials=100, timeout=6000)
 
     pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
     complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
@@ -104,10 +128,13 @@ if __name__ == "__main__":
                 Number of complete trials: ", {len(complete_trials)}""")
 
     print("Best trial:")
-    trial = study.best_trial
+    best_trial = study.best_trial
 
-    print("  Value: ", trial.value)
+    print("  Value: ", best_trial.value)
 
     print("  Params: ")
-    for key, value in trial.params.items():
+    for key, value in best_trial.params.items():
         print("    {}: {}".format(key, value))
+
+    print("Evaluating best model...")
+    detailed_objective(best_trial)

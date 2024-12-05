@@ -84,7 +84,7 @@ class Petri_GraphConv(nn.Module):
         y = self.layers[0](x, edge_index, edge_attr)
         for layer in self.layers[1:]:
             y = layer(y, edge_index, edge_attr)
-        y = self.Readout_Layer(x)
+        y = self.Readout_Layer(y)
         return scatter(y, g.batch, dim=0, reduce="mean")
 
     def loss(self, scores, targets):

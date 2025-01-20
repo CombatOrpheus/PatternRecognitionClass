@@ -1,70 +1,72 @@
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Tuple, List
 
 import numpy as np
 
-# This modules assumes that the files being used have the following structure:
-# petri_net: A Petri Net in compound matrix form [I, O, M_0]; transitions are
-# columns, while rows are places.
-# arr_vlist: The set of markings on the reachability graph.
-# arr_edge: The edges for the reachability graph.
-# arr_tranidx: The transition that fired to generate the new marking.
-# spn_labda: The lambda (average firing rate) corresponding to each arc of the
-# reachable marking graph.
-# spn_steadypro: The steady state probability.
-# spn_markdens: The token probability density function.
-# spn_all_mus: The average number of tokens for each place.
-# spn_mu: The average number of tokens for the whole networ.
+
+# This module processes data from the SPN-Benchmark-DS dataset
+# (https://github.com/netlearningteam/SPN-Benchmark-DS).  The dataset
+# consists of JSON files, where each line is a separate JSON object with the
+# following structure:
 #
-# The original data is available in https://github.com/netlearningteam/SPN-Benchmark-DS
-# Converted from a giant list into one JSON element per line using the command
-# `jq -c '.[]' file`.
+# - petri_net: A Petri net represented as a compound matrix [I, O, M_0].
+#   - I: Incidence matrix (transitions are columns, places are rows).
+#   - O: Output matrix.
+#   - M_0: Initial marking.
+# - arr_vlist:  List of markings in the reachability graph. Each marking is a NumPy array.
+# - arr_edge: Edges of the reachability graph.
+# - arr_tranidx: Transition indices that fired to generate each marking in arr_vlist.
+# - spn_labda: Average firing rates (lambda) for each arc in the reachability graph.
+# - spn_steadypro: Steady-state probabilities.
+# - spn_markdens: Token probability density function.
+# - spn_all_mus: Average number of tokens for each place.
+# - spn_mu: Average number of tokens for the whole network.
+#
+# The original data was converted from a single giant JSON list into one JSON
+# object per line using the command `jq -c '.[]' file`.
 
 
-def get_data(source: Path) -> Iterable:
+def process_spn_data(source: Path, data_fields: List[int], label_field: int) -> Iterable[
+    Tuple[List[np.ndarray], np.ndarray]]:
     """
+    Processes SPN data from a JSON file, extracting specified data fields and a label.
+
     Parameters
     ----------
-        source_file: A valid Path
-    """
-    with open(source) as f:
-        for data in map(json.loads, f):
-            elements = list(data.values())
-            petri_net = np.array(elements[0])
-            reachability_graph = list(map(np.array, elements[1:-1]))
-            spn_mu = elements[-1]
-            yield petri_net, reachability_graph, spn_mu
+    source : Path
+        Path to the JSON data file.  Each line should be a valid JSON object.
+    data_fields : List[int]
+        List of indices indicating which fields to extract as NumPy arrays.
+    label_field : int
+        Index indicating which field to extract as the label.
 
-
-def get_average_tokens(source: Path, network: bool = True) -> Iterable:
-    """Return an iterator with the reachability graphs for each Petri Net in
-    the source file.
-    Parameters
-    ----------
-        source: A Path to the file
-        network: Whether to return the average number of tokens for the whole network (True) or for each place (False).
     Returns
     -------
-        iterable: An iterable that yields the graph information
-        and the true label for this graph.
+    Iterable[Tuple[List[np.ndarray], np.ndarray]]
+        An iterable yielding tuples of (data, label).  Data is a list of NumPy arrays.
     """
     with open(source) as f:
-        source = map(json.loads, f)
-        for elem in source:
-            data = list(elem.values())
-            graph_data = [np.array(info) for info in data[1:5]]
-            graph_data[0] = graph_data[0]
-            label = data[-1] if network else data[-2]
+        for line in f:
+            data = json.loads(line)
+            elements = list(data.values())
+            graph_data = [np.array(elements[i]) for i in data_fields]
+            label = elements[label_field]
             yield graph_data, label
 
 
-def get_steady_state(source: Path) -> Iterable:
-    with open(source) as f:
-        source = map(json.loads, f)
-        for elem in source:
-            data = list(elem.values())
-            graph_data = [np.array(info) for info in data[1:4]]
-            graph_data[0] = graph_data[0]
-            label = data[5]
-            yield graph_data, label
+def get_average_tokens(source: Path, network: bool = True) -> Iterable[Tuple[List[np.ndarray], np.ndarray]]:
+    """Returns an iterator with reachability graphs and average token counts."""
+    data_fields = list(range(1, 5))  # Fields 1-4 are graph data.
+    label_field = -1 if network else -2
+    return process_spn_data(source, data_fields, label_field)
+
+
+def get_steady_state(source: Path) -> Iterable[Tuple[List[np.ndarray], np.ndarray]]:
+    """Returns an iterator with reachability graphs and steady state probabilities."""
+    return process_spn_data(source, list(range(1, 4)), 5)
+
+
+def get_mark_density(source: Path) -> Iterable[Tuple[List[np.ndarray], np.ndarray]]:
+    """Returns an iterator with reachability graphs and token probability density functions."""
+    return process_spn_data(source, list(range(1, 4)), 6)

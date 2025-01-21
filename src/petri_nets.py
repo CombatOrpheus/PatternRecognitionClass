@@ -19,45 +19,52 @@ def to_incidence_matrix(pn: np.array) -> np.array:
     return pn[:, :transitions] - pn[:, transitions*2:-1]
 
 
-def to_information(petri_net: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def to_information(petri_net: np.ndarray, lambdas: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Convert a Petri net matrix to its graph representation, extracting edges, node
-    features, and edge features for further use in graph-based tasks or analyses.
+    Convert a Petri net and associated parameters into graph information.
 
-    Parameters
-    ----------
-    petri_net : numpy.ndarray
-        A 2D numpy array representing the Petri net structure. Columns are divided
-        into pre-transitions, post-transitions, and the initial marking.
+    This function processes a given Petri net matrix and its associated
+    rates (lambdas) to generate graph-based representations. The output
+    includes a set of edges with attributes, node features, and additional
+    graph-related data.
 
-    Returns
-    -------
-    tuple
-        A tuple containing three elements:
-        - all_edges (numpy.ndarray): A 2D array where each row represents an edge
-          in the graph. Each edge connects a node pair specified by the column
-          indices (source, destination).
-        - edge_features (numpy.ndarray): A 2D array of features extracted for all
-          edges. Each feature corresponds to the weight or marked connections in
-          pre and post-transitions.
-        - node_features (numpy.ndarray): A 1D array of features extracted for all
-          nodes. Summarizes per-node attributes or markings within the Petri net.
+    Parameters:
+        petri_net (np.ndarray): A 2D NumPy array representing the Petri net
+            structure. The matrix includes input (pre), output (post) arcs,
+            and the initial marking.
+        lambdas (np.ndarray): A 1D NumPy array representing the transition
+            rates or weights for each transition in the Petri net.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray]: A tuple containing three
+        elements:
+            - all_edges (np.ndarray): A 2D NumPy array of shape (num_edges, 2),
+              representing all edges in the graph, where the first column
+              contains source nodes and the second column contains target nodes.
+            - edge_features (np.ndarray): A 2D NumPy array of shape
+              (num_edges, 3), where each row includes attributes of the
+              corresponding edge - [weight from pre-matrix, weight from
+              post-matrix, transition rate].
+            - node_features (np.ndarray): A 1D NumPy array containing the
+              concatenation of the initial marking and transition rates
+              (lambdas), representing features of the nodes.
     """
     num_transitions = petri_net.shape[1] // 2
 
-    pre_transitions = petri_net[:, :num_transitions]
-    post_transitions = petri_net[:, num_transitions:2 * num_transitions]
+    pre_conditions = petri_net[:, :num_transitions]
+    post_conditions = petri_net[:, num_transitions:2 * num_transitions]
+    initial_marking = petri_net[:, -1]
 
-    # Vectorized edge detection
-    incoming_edges = np.transpose(np.nonzero(pre_transitions))
-    outgoing_edges = np.transpose(np.nonzero(post_transitions))
+    incoming_edges = np.transpose(np.nonzero(pre_conditions))
+    outgoing_edges = np.transpose(np.nonzero(post_conditions))
     all_edges = np.vstack((incoming_edges, outgoing_edges))
-    all_edges = all_edges[:, [1, 0]]
+    all_edges = np.flip(all_edges, axis=1)  # Flip so that it is source, target
 
-    incoming_edge_features = pre_transitions[incoming_edges]
-    outgoing_edge_features = post_transitions[outgoing_edges]
+    num_edges = all_edges.shape[0]
+    edge_features = np.zeros((num_edges, 3))
+    edge_features[:, 0] = pre_conditions[all_edges[:, 0], all_edges[:, 1]]
+    edge_features[:, 1] = post_conditions[all_edges[:, 0], all_edges[:, 1]]
+    edge_features[:, 2] = lambdas[all_edges[:, 1]]
 
-    node_features = np.hstack((petri_net[:, -1].transpose(), np.full(num_transitions, -1)))
-    edge_features = np.vstack((incoming_edge_features, outgoing_edge_features))
-
+    node_features = np.concatenate((initial_marking, lambdas))
     return all_edges, edge_features, node_features

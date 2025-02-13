@@ -15,24 +15,26 @@ from src.petri_nets import SPNData
 class BaseDataset(ABC):
     source_path: Path
     batch_size: int
-    size: int = field(init=False)
-    features: int = field(init=False)
-    data: list[Data] = field(init=False)
+    size: int = field(init=False, default=None)
+    features: int = field(init=False, default=None)
+    data: list[Data] = field(default_factory=list())
 
     def get_num_features(self) -> int:
+        assert self.features is not None, "Please, create the dataset by calling `create_dataloader`"
         return self.features
 
     def get_dataset_size(self) -> int:
+        assert self.size is not None, "Please, create the first by calling `create_dataloader`"
         return self.size
 
-    def get_data_as_tensor(self) -> Tensor:
-        pass
+    def get_actual_as_tensor(self) -> Tensor:
+        assert len(self.data) > 0, "Please, create the first by calling `create_dataloader`"
+        return Tensor((data.y for data in self.data))
 
     @abstractmethod
     def create_dataloader(self, data):
         """Create a DataLoader from the processed data."""
         raise NotImplementedError
-
 
     def _get_data(self) -> Iterable[SPNData]:
         with open(self.source_path) as f:

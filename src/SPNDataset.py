@@ -16,4 +16,5 @@ class SPNDataset(BaseDataset):
             for net in nets]
         self.data = data
         self.size = len(data)
+        self.features = 1
         return DataLoader(data, self.batch_size, shuffle=True, drop_last=True)

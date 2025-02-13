@@ -29,6 +29,7 @@ class ReachabilityGraphDataset(BaseDataset):
 
     def create_dataloader(self, data):
         data = list(self._get_data())
+        size = 1
         if self.reduce:
             nets = map(_reduce_features, data)
         else:
@@ -45,4 +46,5 @@ class ReachabilityGraphDataset(BaseDataset):
             for net in nets]
         self.data = data
         self.size = len(data)
+        self.features = size
         return DataLoader(data, self.batch_size, shuffle=True, drop_last=True)

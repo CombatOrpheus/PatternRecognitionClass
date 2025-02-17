@@ -44,7 +44,7 @@ class SPNData:
         self.average_firing_rates = np.array(data['spn_labda'])
         self.steady_state_probabilities = np.array(data['spn_steadypro'])
         self.token_probability_density_function = np.array(data['spn_markdens'])
-        self.average_tokens_per_place = np.array(data['spn_all_mus'])
+        self.average_tokens_per_place = np.array(data['spn_allmus'])
         self.average_tokens_network = data['spn_mu']
 
     def to_information(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -112,4 +112,4 @@ def to_incidence_matrix(pn: np.array) -> np.array:
         A NumPy array representing the incidence matrix.
     """
     transitions = pn.shape[1] // 2
-    return pn[:, :transitions] - pn[:, transitions * 2:-1]
+    return pn[:, :transitions] - pn[:, transitions:-1]

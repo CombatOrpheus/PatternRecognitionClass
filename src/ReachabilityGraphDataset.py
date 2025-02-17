@@ -27,7 +27,7 @@ class ReachabilityGraphDataset(BaseDataset):
         super().__init__(path, batch_size)
         self.reduce = reduce
 
-    def create_dataloader(self, data):
+    def create_dataloader(self):
         data = list(self._get_data())
         size = 1
         if self.reduce:

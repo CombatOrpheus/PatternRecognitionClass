@@ -5,7 +5,7 @@ from src.BaseDataset import BaseDataset
 
 
 class SPNDataset(BaseDataset):
-    def create_dataloader(self, data) -> DataLoader:
+    def create_dataloader(self) -> DataLoader:
         nets = (net.to_information() for net in self._get_data())
         data = [
             Data(

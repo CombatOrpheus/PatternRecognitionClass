@@ -2,11 +2,11 @@ from pathlib import Path
 
 import numpy as np
 from torch import from_numpy
-from torch.utils.data import DataLoader
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 
 from src.BaseDataset import BaseDataset
-from src.petri_nets import SPNData
+from src.PetriNets import SPNData
 
 
 def _reduce_features(net: SPNData) -> SPNData:
@@ -26,8 +26,9 @@ class ReachabilityGraphDataset(BaseDataset):
     def __init__(self, path: Path, batch_size: int, reduce: bool = True):
         super().__init__(path, batch_size)
         self.reduce = reduce
+        self._create_dataloader()
 
-    def create_dataloader(self):
+    def _create_dataloader(self) -> None:
         data = list(self._get_data())
         size = 1
         if self.reduce:
@@ -39,12 +40,13 @@ class ReachabilityGraphDataset(BaseDataset):
         data = [
             Data(
                 x=from_numpy(net.spn),
-                edge_index=from_numpy(net.reachability_graph_edges),
-                edge_attr=from_numpy(net.average_firing_rates),
-                y=net.average_tokens_network
+                edge_index=from_numpy(net.reachability_graph_nodes),
+                edge_attr=from_numpy(net.transition_indices[net.reachability_graph_edges]),
+                y=net.average_tokens_network,
+                num_nodes=net.spn.shape[0],
             )
             for net in nets]
         self.data = data
         self.size = len(data)
         self.features = size
-        return DataLoader(data, self.batch_size, shuffle=True, drop_last=True)
+        self.loader = DataLoader(data, self.batch_size, shuffle=True, drop_last=True)

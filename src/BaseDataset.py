@@ -7,8 +7,9 @@ from typing import Iterable
 from pytoolconfig import field
 from torch import Tensor
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 
-from src.petri_nets import SPNData
+from src.PetriNets import SPNData
 
 
 @dataclass
@@ -18,6 +19,7 @@ class BaseDataset(ABC):
     size: int = field(init=False, default=None)
     features: int = field(init=False, default=None)
     data: list[Data] = field(init=False, default=None)
+    loader: DataLoader = field(init=False, default=None)
 
     def get_num_features(self) -> int:
         assert self.features is not None, "Please, create the dataset by calling `create_dataloader`"
@@ -31,8 +33,15 @@ class BaseDataset(ABC):
         assert len(self.data) > 0, "Please, create the first by calling `create_dataloader`"
         return Tensor([data.y for data in self.data])
 
+    def get_dataset(self):
+        assert self.loader is not None, "Please, create the first by calling `create_dataloader`"
+        return self.loader
+
+    def get_dataloader(self) -> DataLoader:
+        return self.loader
+
     @abstractmethod
-    def create_dataloader(self):
+    def _create_dataloader(self) -> None:
         """Create a DataLoader from the processed data."""
         raise NotImplementedError
 

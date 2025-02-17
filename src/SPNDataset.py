@@ -1,11 +1,12 @@
 from torch import from_numpy
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 
 from src.BaseDataset import BaseDataset
 
 
 class SPNDataset(BaseDataset):
-    def create_dataloader(self) -> DataLoader:
+    def _create_dataloader(self) -> None:
         nets = (net.to_information() for net in self._get_data())
         data = [
             Data(
@@ -17,4 +18,4 @@ class SPNDataset(BaseDataset):
         self.data = data
         self.size = len(data)
         self.features = 1
-        return DataLoader(data, self.batch_size, shuffle=True, drop_last=True)
+        self.loader = DataLoader(data, self.batch_size, shuffle=True, drop_last=True)

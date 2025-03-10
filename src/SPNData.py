@@ -37,7 +37,7 @@ class SPNData:
 
     def __init__(self, data: dict):
         self.spn = np.array(data['petri_net'])
-        self.incidence_matrix = to_incidence_matrix(self.spn)
+        self.incidence_matrix = self.to_incidence_matrix()
         self.reachability_graph_nodes = [np.array(marking) for marking in data['arr_vlist']]
         self.reachability_graph_edges = np.array(data['arr_edge'])
         self.transition_indices = np.array(data['arr_tranidx'])
@@ -55,13 +55,6 @@ class SPNData:
         rates (lambdas) to generate graph-based representations. The output
         includes a set of edges with attributes, node features, and additional
         graph-related data.
-
-        Parameters:
-            petri_net (np.ndarray): A 2D NumPy array representing the Petri net
-                structure. The matrix includes input (pre), output (post) arcs,
-                and the initial marking.
-            lambdas (np.ndarray): A 1D NumPy array representing the transition
-                rates or weights for each transition in the Petri net.
 
         Returns:
             tuple[np.ndarray, np.ndarray, np.ndarray]: A tuple containing three
@@ -98,18 +91,12 @@ class SPNData:
         node_features = np.concatenate((initial_marking, lambdas))
         return all_edges, edge_features, node_features
 
+    def to_incidence_matrix(self) -> np.array:
+        """Converts a Petri net representation to its incidence matrix.  This version
+        assumes an odd number of columns in the input array.
 
-def to_incidence_matrix(pn: np.array) -> np.array:
-    """Converts a Petri net representation to its incidence matrix.  This version
-    assumes an odd number of columns in the input array.
-
-    Args:
-        pn: A NumPy array representing the Petri net. The array should have an odd
-            number of columns.  The first half (rounded down) represents pre-transitions,
-            and the second half (rounded up) represents post-transitions.
-
-    Returns:
-        A NumPy array representing the incidence matrix.
-    """
-    transitions = pn.shape[1] // 2
-    return pn[:, :transitions] - pn[:, transitions:-1]
+        Returns:
+            A NumPy array representing the incidence matrix.
+        """
+        transitions = self.spn.shape[1] // 2
+        return self.spn[:, :transitions] - self.spn[:, transitions:-1]

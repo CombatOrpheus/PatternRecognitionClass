@@ -3,10 +3,9 @@ from pathlib import Path
 import numpy as np
 from torch import from_numpy
 from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
 
+from SPNData import SPNData
 from src.BaseDataset import BaseDataset
-from src.PetriNets import SPNData
 
 
 def _reduce_features(net: SPNData) -> SPNData:
@@ -49,4 +48,3 @@ class ReachabilityGraphDataset(BaseDataset):
         self.data = data
         self.size = len(data)
         self.features = size
-        self.loader = DataLoader(data, self.batch_size, shuffle=True, drop_last=True)

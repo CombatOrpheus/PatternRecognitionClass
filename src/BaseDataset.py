@@ -1,12 +1,10 @@
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from pytoolconfig import field
 from torch import Tensor
-from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
 from src.PetriNets import SPNData
@@ -18,8 +16,17 @@ class BaseDataset(ABC):
     batch_size: int
     size: int = field(init=False, default=None)
     features: int = field(init=False, default=None)
-    data: list[Data] = field(init=False, default=None)
     loader: DataLoader = field(init=False, default=None)
+
+    def __post_init__(self):
+        print(f"Loading dataset from: {self.source_path}")
+        self._create_dataloader()
+        if not hasattr(self, 'loader') or not hasattr(self, 'size') \
+                or not hasattr(self, 'features'):
+            raise NotImplementedError(
+                "Subclass's _create_dataloader must set 'loader', 'size', and 'features' attributes."
+            )
+        print("Dataset loaded successfully.")
 
     def get_num_features(self) -> int:
         assert self.features is not None, "Please, create the dataset by calling `create_dataloader`"
@@ -30,12 +37,7 @@ class BaseDataset(ABC):
         return self.size
 
     def get_actual_as_tensor(self) -> Tensor:
-        assert len(self.data) > 0, "Please, create the first by calling `create_dataloader`"
-        return Tensor([data.y for data in self.data])
-
-    def get_dataset(self):
-        assert self.loader is not None, "Please, create the first by calling `create_dataloader`"
-        return self.loader
+        return Tensor([data.y for data in self._get_data()])
 
     def get_dataloader(self) -> DataLoader:
         return self.loader

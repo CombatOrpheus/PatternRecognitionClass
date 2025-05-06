@@ -65,7 +65,7 @@ class SPNData:
 
         Returns:
             tuple[np.ndarray, np.ndarray, np.ndarray]: A tuple containing:
-                - all_edges (np.ndarray): Shape (num_arcs, 2). Edges between
+                - edge_pairs (np.ndarray): Shape (num_arcs, 2). Edges between
                   nodes (source_node_idx, target_node_idx).
                 - edge_features (np.ndarray): Shape (num_arcs, 1). Arc weights.
                 - node_features (np.ndarray): Shape (num_nodes, 2). Node features
@@ -121,26 +121,26 @@ class SPNData:
 
         # Combine edges and features, handling cases where one set might be empty
         if edges_in.size > 0 and edges_out.size > 0:
-            all_edges = np.vstack((edges_in, edges_out))
+            edge_pairs = np.vstack((edges_in, edges_out))
             # Ensure weights are concatenated in the same order as edges
             edge_features = np.concatenate((weights_in, weights_out)).reshape(-1, 1)
         elif edges_in.size > 0:  # Only incoming edges exist
-            all_edges = edges_in
+            edge_pairs = edges_in
             edge_features = weights_in.reshape(-1, 1)
         elif edges_out.size > 0:  # Only outgoing edges exist
-            all_edges = edges_out
+            edge_pairs = edges_out
             edge_features = weights_out.reshape(-1, 1)
         else:  # No edges
-            all_edges = np.empty((0, 2), dtype=int)
+            edge_pairs = np.empty((0, 2), dtype=int)
             edge_features = np.empty((0, 1), dtype=float)  # Match weight type
 
         # Ensure correct shapes (optional but good practice for debugging)
-        # num_arcs = all_edges.shape[0]
-        # assert all_edges.shape == (num_arcs, 2), f"Shape mismatch for all_edges: {all_edges.shape}"
+        # num_arcs = edge_pairs.shape[0]
+        # assert edge_pairs.shape == (num_arcs, 2), f"Shape mismatch for edge_pairs: {edge_pairs.shape}"
         # assert edge_features.shape == (num_arcs, 1), f"Shape mismatch for edge_features: {edge_features.shape}"
         # assert node_features.shape == (num_nodes, 2), f"Shape mismatch for node_features: {node_features.shape}"
 
-        return all_edges, edge_features, node_features
+        return node_features, edge_features, edge_pairs
 
 
 def to_incidence_matrix(pn: np.ndarray) -> np.ndarray:

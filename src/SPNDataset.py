@@ -10,9 +10,9 @@ class SPNDataset(BaseDataset):
         nets = (net.to_information() for net in self._get_data())
         data = [
             Data(
-                x=from_numpy(net[2]),
+                x=from_numpy(net[0]),
                 edge_attr=from_numpy(net[1]),
-                edge_index=from_numpy(net[0])
+                edge_index=from_numpy(net[2]),
             )
             for net in nets]
         self.data = data

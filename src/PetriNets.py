@@ -163,7 +163,7 @@ class SPNData:
 
         # Combine P->T and T->P edges and features
         if edges_in.size > 0 and edges_out.size > 0:
-            edge_pairs = np.vstack((edges_in, edges_out)).astype(int)  # Ensure int dtype
+            edge_pairs = np.vstack((edges_in, edges_out)).astype(int).transpose()  # Ensure int dtype
             edge_features = np.concatenate((weights_in, weights_out)).reshape(-1, 1).astype(float)  # Ensure float dtype
         elif edges_in.size > 0:
             edge_pairs = edges_in.astype(int)

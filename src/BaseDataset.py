@@ -7,7 +7,7 @@ from typing import Iterable
 from torch import Tensor
 from torch_geometric.loader import DataLoader
 
-from src.PetriNets import SPNData
+from src.PetriNets import SPNData, SPNAnalysisResultLabel
 
 
 @dataclass
@@ -17,6 +17,7 @@ class BaseDataset(ABC):
     size: int = field(init=False, default=None)
     features: int = field(init=False, default=None)
     loader: DataLoader = field(init=False, default=None)
+    label: SPNAnalysisResultLabel
 
     def __post_init__(self):
         print(f"Loading dataset from: {self.source_path}")

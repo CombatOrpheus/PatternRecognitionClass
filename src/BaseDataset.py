@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from torch import Tensor
+from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
 from src.PetriNets import SPNData, SPNAnalysisResultLabel
@@ -16,7 +17,7 @@ class BaseDataset(ABC):
     batch_size: int
     size: int = field(init=False, default=None)
     features: int = field(init=False, default=None)
-    loader: DataLoader = field(init=False, default=None)
+    data: list[Data] = field(init=False, default=None)
     label: SPNAnalysisResultLabel
 
     def __post_init__(self):
@@ -38,10 +39,12 @@ class BaseDataset(ABC):
         return self.size
 
     def get_actual_as_tensor(self) -> Tensor:
+        # TODO: Review the utility of this function and whether it's doing what it's supposed to.
         return Tensor([data.y for data in self._get_data()])
 
-    def get_dataloader(self) -> DataLoader:
-        return self.loader
+    def get_dataloader(self, batch=None) -> DataLoader:
+        batch_size = batch if batch is not None else self.batch_size
+        return DataLoader(self.data, batch_size, shuffle=True, drop_last=True)
 
     @abstractmethod
     def _create_dataloader(self) -> None:

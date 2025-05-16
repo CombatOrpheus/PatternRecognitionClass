@@ -7,7 +7,7 @@ import torch.utils.data
 from optuna.trial import TrialState
 from tqdm import trange
 
-from src.datasets import get_average_tokens_dataset
+from src.SPNDataset import SPNDataset
 from src.models import Petri_GCN
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -23,7 +23,7 @@ def define_model(trial, num_features):
         num_layers=trial.suggest_int("Number of GCN Layers", 2, 20),
         readout_layers=trial.suggest_int("MLP Readout Layers", 2, 5),
         mae=MAE
-        )
+    )
 
 
 def train_model(model, optimizer, train_loader):
@@ -48,28 +48,15 @@ def eval_model(model, valid_loader):
     return model.loss(pred, actual)
 
 
-def get_data(trial):
+def objective(trial):
     train_data = Path('Data/RandData_DS1_train_data.processed')
     test_data = Path('Data/RandData_DS1_test_data.processed')
 
-    batch_size = trial.suggest_int("Batch Size", 16, 128, step=4)
+    train_loader = SPNDataset(train_data, batch_size=1, label="average_tokens_network")
+    test_loader = SPNDataset(test_data, batch_size=1, label="average_tokens_network")
 
-    train_dataset = get_average_tokens_dataset(
-        train_data,
-        reduce_features=REDUCE_FEATURES,
-        batch_size=batch_size)
-
-    test_dataset = get_average_tokens_dataset(
-        test_data,
-        reduce_features=REDUCE_FEATURES,
-        batch_size=batch_size)
-    return train_dataset, test_dataset
-
-
-def objective(trial):
-    train_loader, test_loader = get_data(trial)
     # Generate the model.
-    model = define_model(trial, train_loader.num_features).to(DEVICE)
+    model = define_model(trial, train_loader.features).to(DEVICE)
 
     # Generate the optimizers.
     optimizer_name = trial.suggest_categorical(
@@ -78,9 +65,11 @@ def objective(trial):
     lr = trial.suggest_float("Learning Rate", 1e-5, 1e-1, log=True)
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
 
+    batch_size = trial.suggest_int("Batch Size", 16, 128, step=4)
+
     # Training of the model.
     for epoch in trange(EPOCHS, desc='Trial loop', leave=False):
-        loss = train_model(model, optimizer, train_loader)
+        loss = train_model(model, optimizer, train_loader.get_dataloader(batch_size))
         trial.report(loss, epoch)
         # Handle pruning based on the intermediate value.
         if trial.should_prune():
@@ -88,34 +77,8 @@ def objective(trial):
     return loss
 
 
-def detailed_objective(trial):
-    train_loader, test_loader = get_data(trial)
-    model = define_model(trial, train_loader.num_features).to(DEVICE)
-
-    optimizer_name = trial.suggest_categorical(
-        "optimizer",
-        ["Adam", "RMSprop", "SGD"])
-    lr = trial.suggest_float("Learning Rate", 1e-5, 1e-1, log=True)
-    optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
-
-    # Training of the model.
-    for epoch in trange(EPOCHS, desc='Trial loop', leave=False):
-        loss = train_model(model, optimizer, train_loader)
-        trial.report(loss, epoch)
-
-    results = {}
-    datasets = Path('Data').glob('*all*')
-    for dataset in datasets:
-        data = get_average_tokens_dataset(dataset, reduce_features=REDUCE_FEATURES)
-        actual = torch.tensor(([graph.y for graph in data]))
-        pred = [model(graph).tolist() for graph in data]
-        pred = torch.tensor(pred)
-        pred = torch.flatten(pred)
-
-        results['dataset'] = model.loss(pred, actual)
-
-
 if __name__ == "__main__":
+
     study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=100, timeout=6000)
 
@@ -135,6 +98,3 @@ if __name__ == "__main__":
     print("  Params: ")
     for key, value in best_trial.params.items():
         print("    {}: {}".format(key, value))
-
-    print("Evaluating best model...")
-    detailed_objective(best_trial)

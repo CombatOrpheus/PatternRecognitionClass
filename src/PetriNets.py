@@ -1,5 +1,7 @@
+import json
 from dataclasses import dataclass
-from typing import List, Tuple, Literal, Union  # Added Literal and Union
+from pathlib import Path
+from typing import List, Tuple, Literal, Union, Iterator
 
 import numpy as np
 
@@ -81,7 +83,6 @@ class SPNData:
         if self.average_tokens_per_place.shape[0] != num_places:
             print(
                 f"Warning: Mismatch in average_tokens_per_place shape {self.average_tokens_per_place.shape} and number of places {num_places}.")
-
 
     def to_information(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -166,14 +167,14 @@ class SPNData:
             edge_pairs = np.vstack((edges_in, edges_out)).astype(int).transpose()  # Ensure int dtype
             edge_features = np.concatenate((weights_in, weights_out)).reshape(-1, 1).astype(float)  # Ensure float dtype
         elif edges_in.size > 0:
-            edge_pairs = edges_in.astype(int)
+            edge_pairs = edges_in.astype(int).transpose()
             edge_features = weights_in.reshape(-1, 1).astype(float)
         elif edges_out.size > 0:
-            edge_pairs = edges_out.astype(int)
+            edge_pairs = edges_out.astype(int).transpose()
             edge_features = weights_out.reshape(-1, 1).astype(float)
         else:
             # Handle case with no edges
-            edge_pairs = np.empty((0, 2), dtype=int)
+            edge_pairs = np.empty((2, 0), dtype=int)
             edge_features = np.empty((0, 1), dtype=float)
 
         # Return node features, edge features, and edge pairs
@@ -223,3 +224,61 @@ def to_incidence_matrix(pn: np.ndarray) -> np.ndarray:
     incidence_matrix = post_conditions - pre_conditions
     return incidence_matrix
 
+
+def load_spn_data_from_files(
+        file_paths: Union[Path, List[Path]]
+) -> List[SPNData]:
+    """
+    Loads a list of SPNData objects from one or more JSON-L files.
+
+    This function reads all data into memory and returns a list. For very large
+    datasets, consider using `load_spn_data_lazily` to save memory.
+
+    Args:
+        file_paths: A single Path object or a list of Path objects pointing
+                    to the JSON-L data files.
+
+    Returns:
+        A list of SPNData instances, one for each line in the provided files.
+    """
+    # This is a convenience wrapper around the lazy loader to materialize the list.
+    return list(load_spn_data_lazily(file_paths))
+
+
+def load_spn_data_lazily(
+        file_paths: Union[Path, List[Path]]
+) -> Iterator[SPNData]:
+    """
+    Lazily loads SPNData objects from one or more JSON-L files using a generator.
+
+    This function is highly memory-efficient as it yields one SPNData object at
+    a time, without storing the entire dataset in memory.
+
+    Args:
+        file_paths: A single Path object or a list of Path objects pointing
+                    to the JSON-L data files.
+
+    Yields:
+        An iterator of SPNData instances.
+
+    Raises:
+        FileNotFoundError: If any of the specified files do not exist.
+        json.JSONDecodeError: If a line in the file is not valid JSON.
+    """
+    # Normalize input to a list of paths for consistent processing
+    if isinstance(file_paths, Path):
+        paths = [file_paths]
+    else:
+        paths = file_paths
+
+    for file_path in paths:
+        if not file_path.is_file():
+            raise FileNotFoundError(f"Data file not found at: {file_path}")
+
+        print(f"Streaming data from: {file_path}")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                # Each line is a separate JSON object
+                data_dict = json.loads(line)
+                # 'yield' turns this function into a generator
+                yield SPNData(data_dict)

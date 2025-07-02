@@ -5,7 +5,7 @@ channels:
   - pyg
   - conda-forge
 dependencies:
-  - python < 3.12
+  - python
   - pytorch
   - cpuonly
   - pyg
@@ -17,4 +17,6 @@ dependencies:
   - ipywidgets
   - python-lsp-server
   - scikit-posthocs
+  - lightning
+  - torchmetrics
 

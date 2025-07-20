@@ -57,7 +57,10 @@ class SPNDataModule(pl.LightningDataModule):
         self.train_data: Optional[List[Data]] = None
         self.val_data: Optional[List[Data]] = None
         self.test_data: Optional[List[Data]] = None
+
+        self.label_to_predict = label_to_predict
         self.batch_size = batch_size
+        self.num_workers = num_workers
 
     def _process_list(self, raw_data_list: List[SPNData]) -> List[Data]:
         """Converts a list of raw SPNData objects to PyG Data objects."""
@@ -66,21 +69,12 @@ class SPNDataModule(pl.LightningDataModule):
             node_features, edge_features, edge_pairs = net.to_information()
             label = net.get_analysis_result(self.hparams.label_to_predict)
 
-            # Handle node-level vs. graph-level labels automatically
-            if isinstance(label, (float, int)):
-                y = float(label)
-            else:  # It's a numpy array for node-level predictions
-                num_places = net.average_tokens_per_place.shape[0]
-                y_node_labels = from_numpy(node_features[:, 2]).float()  # Use initial marking as base
-                y_node_labels[:num_places] = from_numpy(label).float()
-                y = y_node_labels
-
             processed_data.append(
                 Data(
                     x=from_numpy(node_features).float(),
                     edge_attr=from_numpy(edge_features).float(),
                     edge_index=from_numpy(edge_pairs).long(),
-                    y=y
+                    y=from_numpy(label)
                 )
             )
         return processed_data

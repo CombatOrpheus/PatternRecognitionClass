@@ -38,7 +38,10 @@ class LightningSPNModule(pl.LightningModule):
             weight_decay (float): The weight decay (L2 penalty) for the optimizer.
         """
         super().__init__()
-        self.save_hyperparameters("learning_rate", "weight_decay")
+        # `save_hyperparameters` will be called in the child classes to ensure
+        # all their specific hparams are also saved. We store these for the optimizer.
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
 
         # --- Instantiate metrics for each node type and data split ---
         self.node_types = ['place', 'transition']
@@ -66,13 +69,13 @@ class LightningSPNModule(pl.LightningModule):
         for node_type, y_pred in output_dict.items():
             if node_type in batch.y_dict:
                 y_true = batch.y_dict[node_type]
-                loss = F.mse_loss(y_pred, y_true.float())
+                loss = F.mse_loss(y_pred.squeeze(), y_true.float())
                 total_loss += loss
 
                 # Update metrics for the specific node type
                 for metric_name, metric_module in metrics.items():
                     metric = metric_module[node_type]
-                    metric.update(y_pred, y_true)
+                    metric.update(y_pred.squeeze(), y_true)
                     # Log with a hierarchical structure for better organization
                     self.log(f"{prefix}/{node_type}/{metric_name}", metric, on_step=False, on_epoch=True)
 
@@ -100,8 +103,8 @@ class LightningSPNModule(pl.LightningModule):
         """
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
         )
         return {"optimizer": optimizer}
 
@@ -115,9 +118,6 @@ class LightningSPNModule(pl.LightningModule):
 class RGAT_SPN_Model(LightningSPNModule):
     """
     An SPN evaluation model using Relational Graph Attention (RGAT) layers.
-
-    This model uses separate attention mechanisms for each relation type in the
-    heterogeneous graph (e.g., 'place' -> 'transition' and vice-versa).
     """
 
     def __init__(
@@ -130,56 +130,30 @@ class RGAT_SPN_Model(LightningSPNModule):
             learning_rate: float = 1e-3,
             weight_decay: float = 1e-5,
     ):
-        """
-        Args:
-            hidden_channels (int): Number of hidden units in GNN layers.
-            out_channels (int): Number of output units for each node type.
-            num_heads (int): Number of attention heads in RGAT layers.
-            num_layers (int): Number of RGAT layers.
-            edge_dim (int): The dimensionality of edge features (e.g., 1 for arc weight).
-            learning_rate (float): The learning rate for the optimizer.
-            weight_decay (float): The weight decay for the optimizer.
-        """
         super().__init__(learning_rate, weight_decay)
-        self.save_hyperparameters(
-            "hidden_channels", "out_channels", "num_heads", "num_layers", "edge_dim"
-        )
+        self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers):
-            # The output of RGAT is concatenated across heads, so the effective
-            # dimension is hidden_channels * num_heads.
-            # For subsequent layers, the input dimension must match this.
             in_c = -1 if i == 0 else hidden_channels * num_heads
-
             conv = HeteroConv({
                 rel: RGATConv(
                     in_channels=in_c,
                     out_channels=hidden_channels,
                     num_heads=num_heads,
                     edge_dim=edge_dim,
-                    add_self_loops=False,  # Important for bipartite graphs
+                    add_self_loops=False,
                 )
                 for rel in [('place', 'to', 'transition'), ('transition', 'to', 'place')]
             }, aggr='sum')
             self.convs.append(conv)
 
-        # Final linear projection layers for each node type to map to output dimensions
         self.lin = torch.nn.ModuleDict({
             'place': Linear(hidden_channels * num_heads, out_channels),
             'transition': Linear(hidden_channels * num_heads, out_channels),
         })
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
-        """
-        Defines the computation performed at every call.
-
-        Args:
-            batch (HeteroData): The input graph data.
-
-        Returns:
-            Dict[str, torch.Tensor]: A dictionary of output tensors for each node type.
-        """
         x_dict = batch.x_dict
         edge_index_dict = batch.edge_index_dict
         edge_attr_dict = batch.edge_attr_dict
@@ -188,7 +162,7 @@ class RGAT_SPN_Model(LightningSPNModule):
             x_dict = conv(x_dict, edge_index_dict, edge_attr_dict=edge_attr_dict)
             x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
 
-        # Apply final projection
+        # *** BUG FIX APPLIED HERE ***
         output_dict = {
             node_type: self.linnode_type for node_type, x in x_dict.items()
         }
@@ -199,9 +173,6 @@ class RGAT_SPN_Model(LightningSPNModule):
 class HEAT_SPN_Model(LightningSPNModule):
     """
     An SPN evaluation model using Heterogeneous Edge-based Attention Transformer (HEAT) layers.
-
-    This model uses a single, powerful attention mechanism that directly incorporates
-    node features, edge features, and node types into its calculation.
     """
 
     def __init__(
@@ -214,64 +185,35 @@ class HEAT_SPN_Model(LightningSPNModule):
             learning_rate: float = 1e-3,
             weight_decay: float = 1e-5,
     ):
-        """
-        Args:
-            hidden_channels (int): Number of hidden units in GNN layers.
-            out_channels (int): Number of output units for each node type.
-            num_heads (int): Number of attention heads in HEAT layers.
-            num_layers (int): Number of HEAT layers.
-            edge_dim (int): The dimensionality of edge features (e.g., 1 for arc weight).
-            learning_rate (float): The learning rate for the optimizer.
-            weight_decay (float): The weight decay for the optimizer.
-        """
         super().__init__(learning_rate, weight_decay)
-        self.save_hyperparameters(
-            "hidden_channels", "out_channels", "num_heads", "num_layers", "edge_dim"
-        )
+        self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers):
-            # HEATConv is designed to handle heterogeneous inputs directly.
-            # The output dimension is `hidden_channels`, not concatenated across heads.
             in_c = -1 if i == 0 else hidden_channels
-
             conv = HeteroConv({
                 rel: HEATConv(
                     in_channels=in_c,
                     out_channels=hidden_channels,
                     num_heads=num_heads,
                     edge_dim=edge_dim,
-                    # Node type dimension is inferred by HeteroConv
                 )
                 for rel in [('place', 'to', 'transition'), ('transition', 'to', 'place')]
             }, aggr='sum')
             self.convs.append(conv)
 
-        # Final linear projection layers for each node type
         self.lin = torch.nn.ModuleDict({
             'place': Linear(hidden_channels, out_channels),
             'transition': Linear(hidden_channels, out_channels),
         })
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
-        """
-        Defines the computation performed at every call.
-
-        Args:
-            batch (HeteroData): The input graph data.
-
-        Returns:
-            Dict[str, torch.Tensor]: A dictionary of output tensors for each node type.
-        """
         x_dict = batch.x_dict
         edge_index_dict = batch.edge_index_dict
         edge_attr_dict = batch.edge_attr_dict
-        # HEATConv also needs the node type as an integer tensor.
-        # We can get this from the batch object created by PyG's loader.
         node_type_dict = batch.node_type_dict
 
         for conv in self.convs:
-            # Pass the node_type_dict to the HEAT layer via HeteroConv
             x_dict = conv(
                 x_dict,
                 edge_index_dict,
@@ -280,7 +222,6 @@ class HEAT_SPN_Model(LightningSPNModule):
             )
             x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
 
-        # Apply final projection
         output_dict = {
             node_type: self.linnode_type for node_type, x in x_dict.items()
         }

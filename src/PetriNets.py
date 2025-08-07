@@ -47,11 +47,10 @@ class SPNData:
     token_probability_density_function: np.ndarray
     average_tokens_per_place: np.ndarray
     average_tokens_network: float
+    num_node_features: int
 
     def __init__(self, data: dict):
         # Ensure data exists and has expected keys before accessing
-        if not isinstance(data, dict):
-            raise TypeError("Input data must be a dictionary.")
         required_keys = ['petri_net', 'arr_vlist', 'arr_edge', 'arr_tranidx',
                          'spn_labda', 'spn_steadypro', 'spn_markdens',
                          'spn_allmus', 'spn_mu']
@@ -83,6 +82,8 @@ class SPNData:
         if self.average_tokens_per_place.shape[0] != num_places:
             print(
                 f"Warning: Mismatch in average_tokens_per_place shape {self.average_tokens_per_place.shape} and number of places {num_places}.")
+            
+        self.num_node_features = 4
 
     def to_information(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """

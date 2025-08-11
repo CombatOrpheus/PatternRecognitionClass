@@ -1,22 +1,16 @@
 name: pattern-recognition
 channels:
   - defaults
-  - pytorch
-  - pyg
-  - conda-forge
 dependencies:
-  - python
-  - pytorch
-  - cpuonly
-  - pyg
-  - optuna
-  - numpy
+  - python=3.12
   - ipython
   - jupyterlab
   - jupyter
   - ipywidgets
-  - python-lsp-server
-  - scikit-posthocs
-  - lightning
-  - torchmetrics
+  - scikit-learn
+# Pip install
+# pip3 install optuna scikit-posthocs
+# pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+# pip3 install torch_geometric
+# pip3 install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.7.0+cu128.html
 

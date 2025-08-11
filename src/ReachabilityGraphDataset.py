@@ -16,7 +16,7 @@ def _reduce_features(net: SPNData) -> SPNData:
 
 def _pad(net: SPNData, size: int) -> SPNData:
     padding = size - net.spn.shape[1]
-    net.spn = np.pad(net.spn, (0, padding), 'constant')
+    net.spn = np.pad(net.spn, (0, padding), "constant")
     return net
 
 
@@ -45,7 +45,8 @@ class ReachabilityGraphDataset(BaseDataset):
                 y=net.average_tokens_network,
                 num_nodes=net.spn.shape[0],
             )
-            for net in nets]
+            for net in nets
+        ]
         self.data = data
         self.size = len(data)
         self.features = size

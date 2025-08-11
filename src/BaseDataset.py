@@ -23,8 +23,7 @@ class BaseDataset(ABC):
     def __post_init__(self):
         print(f"Loading dataset from: {self.source_path}")
         self._create_dataloader()
-        if not hasattr(self, 'loader') or not hasattr(self, 'size') \
-                or not hasattr(self, 'features'):
+        if not hasattr(self, "loader") or not hasattr(self, "size") or not hasattr(self, "features"):
             raise NotImplementedError(
                 "Subclass's _create_dataloader must set 'loader', 'size', and 'features' attributes."
             )

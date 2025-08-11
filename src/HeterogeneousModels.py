@@ -9,9 +9,9 @@ It includes two main models:
 Both models are built on a common base class, `LightningSPNModule`, which
 handles the training, validation, and optimization logic with comprehensive metric tracking.
 """
+
 from typing import Dict, Any
 
-import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch.nn import ModuleDict
@@ -44,14 +44,16 @@ class LightningSPNModule(pl.LightningModule):
         self.weight_decay = weight_decay
 
         # --- Instantiate metrics for each node type and data split ---
-        self.node_types = ['place', 'transition']
-        for split in ['train', 'val', 'test']:
-            metrics = ModuleDict({
-                'mae': ModuleDict({nt: MeanAbsoluteError() for nt in self.node_types}),
-                'mse': ModuleDict({nt: MeanSquaredError() for nt in self.node_types}),
-                'rmse': ModuleDict({nt: MeanSquaredError(squared=False) for nt in self.node_types}),
-                'r2': ModuleDict({nt: R2Score() for nt in self.node_types}),
-            })
+        self.node_types = ["place", "transition"]
+        for split in ["train", "val", "test"]:
+            metrics = ModuleDict(
+                {
+                    "mae": ModuleDict({nt: MeanAbsoluteError() for nt in self.node_types}),
+                    "mse": ModuleDict({nt: MeanSquaredError() for nt in self.node_types}),
+                    "rmse": ModuleDict({nt: MeanSquaredError(squared=False) for nt in self.node_types}),
+                    "r2": ModuleDict({nt: R2Score() for nt in self.node_types}),
+                }
+            )
             setattr(self, f"{split}_metrics", metrics)
 
     def _common_step(self, batch: HeteroData, batch_idx: int, prefix: str) -> torch.Tensor:
@@ -77,7 +79,12 @@ class LightningSPNModule(pl.LightningModule):
                     metric = metric_module[node_type]
                     metric.update(y_pred.squeeze(), y_true)
                     # Log with a hierarchical structure for better organization
-                    self.log(f"{prefix}/{node_type}/{metric_name}", metric, on_step=False, on_epoch=True)
+                    self.log(
+                        f"{prefix}/{node_type}/{metric_name}",
+                        metric,
+                        on_step=False,
+                        on_epoch=True,
+                    )
 
         if total_loss == 0.0:
             # This can happen if a batch contains no labeled nodes.
@@ -121,14 +128,14 @@ class RGAT_SPN_Model(LightningSPNModule):
     """
 
     def __init__(
-            self,
-            hidden_channels: int,
-            out_channels: int,
-            num_heads: int,
-            num_layers: int,
-            edge_dim: int,
-            learning_rate: float = 1e-3,
-            weight_decay: float = 1e-5,
+        self,
+        hidden_channels: int,
+        out_channels: int,
+        num_heads: int,
+        num_layers: int,
+        edge_dim: int,
+        learning_rate: float = 1e-3,
+        weight_decay: float = 1e-5,
     ):
         super().__init__(learning_rate, weight_decay)
         self.save_hyperparameters()
@@ -136,22 +143,30 @@ class RGAT_SPN_Model(LightningSPNModule):
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers):
             in_c = -1 if i == 0 else hidden_channels * num_heads
-            conv = HeteroConv({
-                rel: RGATConv(
-                    in_channels=in_c,
-                    out_channels=hidden_channels,
-                    num_heads=num_heads,
-                    edge_dim=edge_dim,
-                    add_self_loops=False,
-                )
-                for rel in [('place', 'to', 'transition'), ('transition', 'to', 'place')]
-            }, aggr='sum')
+            conv = HeteroConv(
+                {
+                    rel: RGATConv(
+                        in_channels=in_c,
+                        out_channels=hidden_channels,
+                        num_heads=num_heads,
+                        edge_dim=edge_dim,
+                        add_self_loops=False,
+                    )
+                    for rel in [
+                        ("place", "to", "transition"),
+                        ("transition", "to", "place"),
+                    ]
+                },
+                aggr="sum",
+            )
             self.convs.append(conv)
 
-        self.lin = torch.nn.ModuleDict({
-            'place': Linear(hidden_channels * num_heads, out_channels),
-            'transition': Linear(hidden_channels * num_heads, out_channels),
-        })
+        self.lin = torch.nn.ModuleDict(
+            {
+                "place": Linear(hidden_channels * num_heads, out_channels),
+                "transition": Linear(hidden_channels * num_heads, out_channels),
+            }
+        )
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
         x_dict = batch.x_dict
@@ -163,9 +178,7 @@ class RGAT_SPN_Model(LightningSPNModule):
             x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
 
         # *** BUG FIX APPLIED HERE ***
-        output_dict = {
-            node_type: self.linnode_type for node_type, x in x_dict.items()
-        }
+        output_dict = {node_type: self.linnode_type for node_type, x in x_dict.items()}
 
         return output_dict
 
@@ -176,14 +189,14 @@ class HEAT_SPN_Model(LightningSPNModule):
     """
 
     def __init__(
-            self,
-            hidden_channels: int,
-            out_channels: int,
-            num_heads: int,
-            num_layers: int,
-            edge_dim: int,
-            learning_rate: float = 1e-3,
-            weight_decay: float = 1e-5,
+        self,
+        hidden_channels: int,
+        out_channels: int,
+        num_heads: int,
+        num_layers: int,
+        edge_dim: int,
+        learning_rate: float = 1e-3,
+        weight_decay: float = 1e-5,
     ):
         super().__init__(learning_rate, weight_decay)
         self.save_hyperparameters()
@@ -191,21 +204,29 @@ class HEAT_SPN_Model(LightningSPNModule):
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers):
             in_c = -1 if i == 0 else hidden_channels
-            conv = HeteroConv({
-                rel: HEATConv(
-                    in_channels=in_c,
-                    out_channels=hidden_channels,
-                    num_heads=num_heads,
-                    edge_dim=edge_dim,
-                )
-                for rel in [('place', 'to', 'transition'), ('transition', 'to', 'place')]
-            }, aggr='sum')
+            conv = HeteroConv(
+                {
+                    rel: HEATConv(
+                        in_channels=in_c,
+                        out_channels=hidden_channels,
+                        num_heads=num_heads,
+                        edge_dim=edge_dim,
+                    )
+                    for rel in [
+                        ("place", "to", "transition"),
+                        ("transition", "to", "place"),
+                    ]
+                },
+                aggr="sum",
+            )
             self.convs.append(conv)
 
-        self.lin = torch.nn.ModuleDict({
-            'place': Linear(hidden_channels, out_channels),
-            'transition': Linear(hidden_channels, out_channels),
-        })
+        self.lin = torch.nn.ModuleDict(
+            {
+                "place": Linear(hidden_channels, out_channels),
+                "transition": Linear(hidden_channels, out_channels),
+            }
+        )
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
         x_dict = batch.x_dict
@@ -222,8 +243,6 @@ class HEAT_SPN_Model(LightningSPNModule):
             )
             x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
 
-        output_dict = {
-            node_type: self.linnode_type for node_type, x in x_dict.items()
-        }
+        output_dict = {node_type: self.linnode_type for node_type, x in x_dict.items()}
 
         return output_dict

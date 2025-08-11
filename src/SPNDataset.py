@@ -2,6 +2,7 @@
 This module defines the SPNDataset class, a subclass of BaseDataset, for handling SPN (Sum-Product Network) data.
 It includes methods for creating data loaders and padding features.
 """
+
 from torch import from_numpy
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
@@ -11,6 +12,7 @@ from src.BaseDataset import BaseDataset
 
 class SPNDataset(BaseDataset):
     pad: bool = True
+
     def _create_dataloader(self) -> None:
         nets = ((net.to_information(), net.get_analysis_result(self.label)) for net in self._get_data())
         data = [
@@ -18,9 +20,10 @@ class SPNDataset(BaseDataset):
                 x=from_numpy(net[0]).float(),
                 edge_attr=from_numpy(net[1]).float(),
                 edge_index=from_numpy(net[2]).long(),
-                y=label
+                y=label,
             )
-            for net, label in nets]
+            for net, label in nets
+        ]
 
         self.data = data
 
@@ -43,5 +46,5 @@ def _pad(data: list[Data]) -> list[Data]:
         if padding > 0:
             d.edge_attr = cat((features, zeros(padding, d.edge_attr.shape[1])), dim=0)
 
-    assert (len(set(d.edge_attr.shape for d in data)) == 1)
+    assert len(set(d.edge_attr.shape for d in data)) == 1
     return data

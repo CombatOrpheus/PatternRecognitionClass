@@ -27,8 +27,9 @@ import numpy as np
 # object per line using the command `jq -c '.[]' file`.
 
 
-def process_spn_data(source: Path, data_fields: List[int], label_field: int) -> Iterable[
-    Tuple[List[np.ndarray], np.ndarray]]:
+def process_spn_data(
+    source: Path, data_fields: List[int], label_field: int
+) -> Iterable[Tuple[List[np.ndarray], np.ndarray]]:
     """
     Processes SPN data from a JSON file, extracting specified data fields and a label.
 

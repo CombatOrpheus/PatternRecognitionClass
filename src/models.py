@@ -92,9 +92,7 @@ class Petri_GraphConv(nn.Module):
 
 
 class Petri_PerPlace_Average(nn.Module):
-    def __init__(
-        self, in_channels: int, hidden_channels: int, num_layers: int, mae: bool = True
-    ):
+    def __init__(self, in_channels: int, hidden_channels: int, num_layers: int, mae: bool = True):
         super().__init__()
         self.GNN = GCN(
             in_channels=in_channels,

@@ -60,9 +60,7 @@ def get_average_tokens_dataset(
         size = max(info[0].shape[1] for info, _ in data)
         iterator = ((__pad_features__(graph, size), label) for graph, label in data)
 
-    loader = DataLoader(
-        list(starmap(__to_data__, iterator)), batch_size=batch_size, shuffle=True
-    )
+    loader = DataLoader(list(starmap(__to_data__, iterator)), batch_size=batch_size, shuffle=True)
     loader.num_features = size
     return loader
 
@@ -70,8 +68,6 @@ def get_average_tokens_dataset(
 def get_steady_state_dataset(source: Path, batch_size: int = 16):
     data = list(get_steady_state(source))
     iterator = ((__steady_state_data__(graph), label) for graph, label in data)
-    loader = DataLoader(
-        list(iterator), batch_size=batch_size, shuffle=True
-    )
+    loader = DataLoader(list(iterator), batch_size=batch_size, shuffle=True)
     loader.num_features = 1
     return loader

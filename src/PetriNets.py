@@ -11,7 +11,7 @@ SPNAnalysisResultLabel = Literal[
     "steady_state_probabilities",
     "token_probability_density_function",
     "average_tokens_per_place",
-    "average_tokens_network"
+    "average_tokens_network",
 ]
 
 
@@ -37,6 +37,7 @@ class SPNData:
         average_tokens_per_place: Average number of tokens for each place.
         average_tokens_network: Average number of tokens for the whole network.
     """
+
     spn: np.ndarray
     incidence_matrix: np.ndarray
     reachability_graph_nodes: List[np.ndarray]
@@ -51,38 +52,48 @@ class SPNData:
 
     def __init__(self, data: dict):
         # Ensure data exists and has expected keys before accessing
-        required_keys = ['petri_net', 'arr_vlist', 'arr_edge', 'arr_tranidx',
-                         'spn_labda', 'spn_steadypro', 'spn_markdens',
-                         'spn_allmus', 'spn_mu']
+        required_keys = [
+            "petri_net",
+            "arr_vlist",
+            "arr_edge",
+            "arr_tranidx",
+            "spn_labda",
+            "spn_steadypro",
+            "spn_markdens",
+            "spn_allmus",
+            "spn_mu",
+        ]
         if not all(key in data for key in required_keys):
             missing = [key for key in required_keys if key not in data]
             raise ValueError(f"Missing required keys in input data: {missing}")
 
-        self.spn = np.array(data['petri_net'])
+        self.spn = np.array(data["petri_net"])
         # Basic validation for spn shape
         if self.spn.ndim != 2 or self.spn.shape[1] % 2 != 1:
             print(f"Warning: Unexpected SPN shape {self.spn.shape}. Expected (places, 2*transitions + 1).")
 
         self.incidence_matrix = to_incidence_matrix(self.spn)
-        self.reachability_graph_nodes = [np.array(marking) for marking in data['arr_vlist']]
-        self.reachability_graph_edges = np.array(data['arr_edge'])
-        self.transition_indices = np.array(data['arr_tranidx'])
-        self.average_firing_rates = np.array(data['spn_labda'])
-        self.steady_state_probabilities = np.array(data['spn_steadypro'])
-        self.token_probability_density_function = np.array(data['spn_markdens'])
-        self.average_tokens_per_place = np.array(data['spn_allmus'])
-        self.average_tokens_network = data['spn_mu']
+        self.reachability_graph_nodes = [np.array(marking) for marking in data["arr_vlist"]]
+        self.reachability_graph_edges = np.array(data["arr_edge"])
+        self.transition_indices = np.array(data["arr_tranidx"])
+        self.average_firing_rates = np.array(data["spn_labda"]).squeeze()
+        self.steady_state_probabilities = np.array(data["spn_steadypro"]).squeeze()
+        self.token_probability_density_function = np.array(data["spn_markdens"])
+        self.average_tokens_per_place = np.array(data["spn_allmus"]).squeeze()
+        self.average_tokens_network = data["spn_mu"]
 
         # Basic shape validation for analysis results
         num_transitions = self.spn.shape[1] // 2
         num_places = self.spn.shape[0]
         if self.average_firing_rates.shape[0] != num_transitions:
             print(
-                f"Warning: Mismatch in average_firing_rates shape {self.average_firing_rates.shape} and number of transitions {num_transitions}.")
+                f"Warning: Mismatch in average_firing_rates shape {self.average_firing_rates.shape} and number of transitions {num_transitions}."
+            )
         if self.average_tokens_per_place.shape[0] != num_places:
             print(
-                f"Warning: Mismatch in average_tokens_per_place shape {self.average_tokens_per_place.shape} and number of places {num_places}.")
-            
+                f"Warning: Mismatch in average_tokens_per_place shape {self.average_tokens_per_place.shape} and number of places {num_places}."
+            )
+
         self.num_node_features = 4
 
     def to_information(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -118,7 +129,7 @@ class SPNData:
 
         # Extract components from the SPN matrix
         pre_conditions = self.spn[:, :num_transitions]  # Input matrix I (P -> T)
-        post_conditions = self.spn[:, num_transitions:2 * num_transitions]  # Output matrix O (T -> P)
+        post_conditions = self.spn[:, num_transitions : 2 * num_transitions]  # Output matrix O (T -> P)
         initial_marking = self.spn[:, -1]  # M_0
         lambdas = self.average_firing_rates  # Transition rates
 
@@ -221,14 +232,12 @@ def to_incidence_matrix(pn: np.ndarray) -> np.ndarray:
         raise ValueError("Input Petri net matrix must have an odd number of columns (2*transitions + 1).")
 
     pre_conditions = pn[:, :num_transitions]
-    post_conditions = pn[:, num_transitions: 2 * num_transitions]
+    post_conditions = pn[:, num_transitions : 2 * num_transitions]
     incidence_matrix = post_conditions - pre_conditions
     return incidence_matrix
 
 
-def load_spn_data_from_files(
-        file_paths: Union[Path, List[Path]]
-) -> List[SPNData]:
+def load_spn_data_from_files(file_paths: Union[Path, List[Path]]) -> List[SPNData]:
     """
     Loads a list of SPNData objects from one or more JSON-L files.
 
@@ -246,9 +255,7 @@ def load_spn_data_from_files(
     return list(load_spn_data_lazily(file_paths))
 
 
-def load_spn_data_lazily(
-        file_paths: Union[Path, List[Path]]
-) -> Iterator[SPNData]:
+def load_spn_data_lazily(file_paths: Union[Path, List[Path]]) -> Iterator[SPNData]:
     """
     Lazily loads SPNData objects from one or more JSON-L files using a generator.
 
@@ -277,7 +284,7 @@ def load_spn_data_lazily(
             raise FileNotFoundError(f"Data file not found at: {file_path}")
 
         print(f"Streaming data from: {file_path}")
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
                 # Each line is a separate JSON object
                 data_dict = json.loads(line)

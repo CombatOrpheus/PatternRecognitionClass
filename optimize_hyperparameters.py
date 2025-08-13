@@ -1,7 +1,9 @@
 import argparse
+import shutil
+import tempfile
 import typing
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import lightning.pytorch as pl
 import optuna
@@ -9,9 +11,10 @@ import torch
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from optuna.integration import PyTorchLightningPruningCallback
+from torch_geometric.data import Data
 
 from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model
-from src.PetriNets import load_spn_data_from_files, SPNAnalysisResultLabel, SPNData
+from src.PetriNets import load_spn_data_from_files, SPNAnalysisResultLabel
 from src.SPNDataModule import SPNDataModule
 
 # Set a seed for reproducibility of data splits, not for trial-to-trial weights
@@ -24,32 +27,32 @@ def get_args():
 
     # Arguments that are fixed for the entire optimization study
     data_group = parser.add_argument_group("Paths and Data")
+    data_group.add_argument("--train_file", type=Path, default=Path("Data/GridData_DS1_train_data.processed"))
+    data_group.add_argument("--val_file", type=Path, default=Path("Data/GridData_DS1_test_data.processed"))
     data_group.add_argument(
-        "--train_file",
-        type=Path,
-        default=Path("Data/GridData_DS1_train_data.processed"),
+        "--label", type=str, default="average_tokens_per_place", choices=typing.get_args(SPNAnalysisResultLabel)
     )
-    data_group.add_argument(
-        "--val_file",
-        type=Path,
-        default=Path("Data/GridData_DS1_test_data.processed"),
-    )
-    data_group.add_argument(
-        "--label",
+
+    model_group = parser.add_argument_group("Model Settings")
+    model_group.add_argument("--prediction_level", type=str, default="node", choices=["node", "graph"])
+    model_group.add_argument(
+        "--gnn_operator",
         type=str,
-        default="average_tokens_per_place",
-        choices=typing.get_args(SPNAnalysisResultLabel),
+        default="gcn",
+        choices=["gcn", "tag", "cheb", "sgc", "ssg"],
+        help="The GNN operator to optimize.",
     )
-    data_group.add_argument("--prediction_level", type=str, default="node", choices=["node", "graph"])
 
     opt_group = parser.add_argument_group("Optimization Settings")
     opt_group.add_argument("--n_trials", type=int, default=100, help="Number of optimization trials.")
     opt_group.add_argument(
         "--timeout", type=int, default=3600 * 2, help="Timeout for the study in seconds (e.g., 2 hours)."
     )
-    opt_group.add_argument("--study_name", type=str, default="gnn_spn_optimization", help="Name for the Optuna study.")
     opt_group.add_argument(
-        "--storage", type=str, default="sqlite:///gnn_spn_optimization.db", help="Optuna storage URL."
+        "--study_name", type=str, default="gnn_spn_optimization", help="Base name for the Optuna study."
+    )
+    opt_group.add_argument(
+        "--storage_dir", type=Path, default=Path("optuna_studies"), help="Directory to save Optuna study databases."
     )
 
     training_group = parser.add_argument_group("Fixed Training Hyperparameters")
@@ -60,57 +63,92 @@ def get_args():
     return parser.parse_args()
 
 
+def prepare_and_cache_data(args: argparse.Namespace) -> Tuple[List[Data], List[Data], str]:
+    """
+    Loads, processes, and caches the training and validation data.
+
+    Returns:
+        A tuple containing the processed training data, validation data, and the
+        path to the temporary directory used for caching.
+    """
+    print("--- Preparing and Caching Data ---")
+    # Create a temporary directory for the cached files
+    cache_dir = tempfile.mkdtemp()
+    print(f"Cache directory created at: {cache_dir}")
+
+    # Load raw data from disk
+    raw_train_data = load_spn_data_from_files(args.train_file)
+    raw_val_data = load_spn_data_from_files(args.val_file)
+
+    # Use SPNDataModule to process the data once
+    temp_dm = SPNDataModule(
+        label_to_predict=args.label,
+        train_data_list=raw_train_data,
+        val_data_list=raw_val_data,
+        batch_size=128,  # Batch size doesn't matter here, just for setup
+    )
+    temp_dm.setup("fit")
+
+    # Save the processed data to the cache directory
+    train_cache_path = Path(cache_dir) / "train_data.pt"
+    val_cache_path = Path(cache_dir) / "val_data.pt"
+    torch.save(temp_dm.train_data, train_cache_path)
+    torch.save(temp_dm.val_data, val_cache_path)
+    print("Processed data has been cached.")
+
+    return temp_dm.train_data, temp_dm.val_data, cache_dir
+
+
 def objective(
-    trial: optuna.Trial, args: argparse.Namespace, train_spn_list: List[SPNData], val_spn_list: List[SPNData]
+    trial: optuna.Trial,
+    args: argparse.Namespace,
+    processed_train_data: List[Data],
+    processed_val_data: List[Data],
 ) -> float:
-    """The Optuna objective function to be minimized."""
-    # --- 1. Suggest Hyperparameters ---
-    gnn_operator = trial.suggest_categorical("gnn_operator", ["gcn", "tag", "cheb", "sgc", "ssg"])
-
-    # K-hops is only relevant for some operators
+    """The Optuna objective function to be minimized, using pre-processed data."""
+    gnn_operator = args.gnn_operator
     gnn_k_hops = trial.suggest_int("gnn_k_hops", 2, 8) if gnn_operator in ["tag", "cheb", "sgc", "ssg"] else 3
-
-    # Alpha is only for SSGConv
     gnn_alpha = trial.suggest_float("gnn_alpha", 0.05, 0.5) if gnn_operator == "ssg" else 0.1
 
     hyperparams = {
         "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
-        "hidden_dim": trial.suggest_categorical("hidden_dim", [16, 32, 64, 128]),
-        "num_layers_gnn": trial.suggest_int("num_layers_gnn", 2, 10),
-        "num_layers_mlp": trial.suggest_int("num_layers_mlp", 1, 3),
-        "batch_size": trial.suggest_categorical("batch_size", [32, 64, 128, 256]),
+        "hidden_dim": trial.suggest_categorical("hidden_dim", [16, 32, 64, 128, 256]),
+        "num_layers_gnn": trial.suggest_int("num_layers_gnn", 2, 20),
+        "num_layers_mlp": trial.suggest_int("num_layers_mlp", 1, 5),
+        "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512, 1024, 2048]),
         "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
-        "gnn_operator": gnn_operator,
-        "gnn_k_hops": gnn_k_hops,
-        "gnn_alpha": gnn_alpha,
     }
 
-    # --- 2. Setup Data and Model ---
+    # --- MODIFIED: Initialize DataModule with pre-processed data ---
     data_module = SPNDataModule(
         label_to_predict=args.label,
-        train_data_list=train_spn_list,
-        val_data_list=val_spn_list,
+        train_data_list=[],  # Raw data is not needed
+        val_data_list=[],
         batch_size=hyperparams["batch_size"],
         num_workers=args.num_workers,
     )
+    # Manually assign the cached data, bypassing the setup/processing step
+    data_module.train_data = processed_train_data
+    data_module.val_data = processed_val_data
 
     model_class = NodeGNN_SPN_Model if args.prediction_level == "node" else GraphGNN_SPN_Model
+    node_features_dim = processed_train_data[0].num_node_features
 
     model = model_class(
-        node_features_dim=train_spn_list[0].num_node_features,
+        node_features_dim=node_features_dim,
         out_channels=1,
         hidden_dim=hyperparams["hidden_dim"],
         num_layers=hyperparams["num_layers_gnn"],
         num_layers_mlp=hyperparams["num_layers_mlp"],
         learning_rate=hyperparams["learning_rate"],
         weight_decay=hyperparams["weight_decay"],
-        gnn_operator_name=hyperparams["gnn_operator"],
-        gnn_k_hops=hyperparams["gnn_k_hops"],
-        gnn_alpha=hyperparams["gnn_alpha"],
+        gnn_operator_name=gnn_operator,
+        gnn_k_hops=gnn_k_hops,
+        gnn_alpha=gnn_alpha,
     )
 
-    # --- 3. Setup Trainer and Callbacks ---
-    logger = TensorBoardLogger(save_dir="optuna_logs", name=args.study_name, version=f"trial_{trial.number}")
+    logger_name = f"{args.study_name}_{args.gnn_operator}"
+    logger = TensorBoardLogger(save_dir="optuna_logs", name=logger_name, version=f"trial_{trial.number}")
     pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val_loss")
     early_stop_callback = EarlyStopping(monitor="val_loss", patience=args.patience, verbose=False, mode="min")
 
@@ -124,52 +162,58 @@ def objective(
         enable_model_summary=False,
     )
 
-    # --- 4. Train and Evaluate ---
     try:
         trainer.fit(model, datamodule=data_module)
     except (RuntimeError, ValueError) as e:
         print(f"Trial {trial.number} failed with error: {e}")
-        raise optuna.exceptions.TrialPruned()  # Prune the trial if it fails
+        raise optuna.exceptions.TrialPruned()
 
-    # --- 5. Return the objective value ---
-    # The metric is automatically logged by the callback.
     return trainer.callback_metrics["val_loss"].item()
 
 
 def main():
     """Main function to run the hyperparameter optimization study."""
     args = get_args()
+    args.storage_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load data once to avoid I/O in each trial
-    print("--- Loading data once for the study ---")
-    train_spn_list = load_spn_data_from_files(args.train_file)
-    val_spn_list = load_spn_data_from_files(args.val_file)
-    if not train_spn_list:
-        raise ValueError("Training data is empty. Please check the data files and paths.")
+    cache_dir = None
+    try:
+        # --- NEW: Prepare and cache data before starting the study ---
+        processed_train_data, processed_val_data, cache_dir = prepare_and_cache_data(args)
 
-    # Create the study with a pruner
-    study = optuna.create_study(
-        study_name=args.study_name,
-        storage=args.storage,
-        direction="minimize",
-        pruner=optuna.pruners.MedianPruner(),
-        load_if_exists=True,
-    )
+        study_name = f"{args.study_name}_{args.gnn_operator}"
+        storage_name = f"sqlite:///{args.storage_dir / study_name}.db"
 
-    print(f"--- Starting Optuna study '{args.study_name}' ---")
-    print(f"Storage: {args.storage}")
-    print(f"Sampler: {study.sampler.__class__.__name__}, Pruner: {study.pruner.__class__.__name__}")
+        study = optuna.create_study(
+            study_name=study_name,
+            storage=storage_name,
+            direction="minimize",
+            pruner=optuna.pruners.MedianPruner(),
+            load_if_exists=True,
+        )
 
-    # Start optimization
-    study.optimize(
-        lambda trial: objective(trial, args, train_spn_list, val_spn_list),
-        n_trials=args.n_trials,
-        timeout=args.timeout,
-        n_jobs=1,  # Run trials sequentially. Can be > 1 if you have multiple GPUs.
-    )
+        study.set_user_attr("train_file", str(args.train_file))
+        study.set_user_attr("val_file", str(args.val_file))
+        study.set_user_attr("label", args.label)
+        study.set_user_attr("prediction_level", args.prediction_level)
+        study.set_user_attr("gnn_operator", args.gnn_operator)
 
-    # --- Print Results ---
-    print("--- Optimization Finished ---")
+        print(f"--- Starting Optuna study '{study_name}' for operator '{args.gnn_operator}' ---")
+        study.optimize(
+            lambda trial: objective(trial, args, processed_train_data, processed_val_data),
+            n_trials=args.n_trials,
+            timeout=args.timeout,
+            n_jobs=1,
+        )
+
+    finally:
+        # --- NEW: Cleanup the cache directory ---
+        if cache_dir:
+            print(f"\n--- Cleaning up cache directory: {cache_dir} ---")
+            shutil.rmtree(cache_dir)
+            print("Cache cleaned up successfully.")
+
+    print("\n--- Optimization Finished ---")
     pruned_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
     complete_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.COMPLETE])
 

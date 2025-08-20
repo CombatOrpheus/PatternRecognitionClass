@@ -1,184 +1,193 @@
-# test_model.py
-
 import argparse
-import csv
 import importlib
+import re
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
 
+import lightning.pytorch as pl
+import pandas as pd
 import torch
+from tqdm import tqdm
 
 from src.PetriNets import load_spn_data_from_files
-
-# We only need to import the DataModule, as it's used to process the new data.
-# The model class will be imported dynamically.
 from src.SPNDataModule import SPNDataModule
 
 
 def load_model_dynamically(checkpoint_path: str) -> tuple[pl.LightningModule, dict]:
     """
     Dynamically loads a Lightning model and its checkpoint data.
-
-    This function reads the model's class path from the checkpoint file,
-    dynamically imports the necessary module, and then loads the model.
-
-    Args:
-        checkpoint_path (str): The path to the .ckpt file.
-
-    Returns:
-        A tuple containing:
-        - The loaded and initialized LightningModule instance.
-        - The raw checkpoint dictionary, useful for inspecting hyperparameters.
     """
-    # Ensure the project's 'src' directory is in the Python path. This helps
-    # the script find your custom modules when run from different locations.
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = Path(__file__).resolve().parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    # SECURITY NOTE: We are using `weights_only=False` which is the default but
-    # generates a warning in recent PyTorch versions. This is necessary because
-    # we need to load the full pickled object to access the 'hyper_parameters'
-    # dictionary, which contains the model's class path for dynamic loading.
-    #
-    # **Only load checkpoints from a trusted source.**
-    # Loading a checkpoint from an untrusted source with `weights_only=False`
-    # can execute arbitrary malicious code.
     checkpoint = torch.load(checkpoint_path, map_location=torch.device("cpu"), weights_only=False)
     hparams = checkpoint.get("hyper_parameters", {})
     model_class_path = hparams.get("__pl_module_type_path__")
 
     if not model_class_path:
-        raise KeyError(
-            "Could not find model class path in checkpoint. "
-            "Ensure the model was saved with `save_hyperparameters()`."
-        )
+        raise KeyError("Could not find model class path in checkpoint.")
 
     try:
         module_path, class_name = model_class_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
         ModelClass = getattr(module, class_name)
     except (ImportError, AttributeError) as e:
-        raise ImportError(
-            f"Failed to import model class '{class_name}' from '{module_path}'. "
-            f"Ensure the module is in your PYTHONPATH. Original error: {e}"
-        )
+        raise ImportError(f"Failed to import model class '{class_name}' from '{module_path}'. Error: {e}")
 
-    # Load the model using the dynamically found class.
-    # `load_from_checkpoint` will handle loading the weights into the model instance.
     model = ModelClass.load_from_checkpoint(checkpoint_path, map_location=torch.device("cpu"))
     return model, checkpoint
 
 
-def evaluate_model_on_directory(checkpoint_path: str, data_directory: str, output_tsv_path: str):
+def parse_metadata_from_path(ckpt_path: Path, experiment_dir: Path) -> Dict[str, Any]:
     """
-    Loads a trained model and evaluates it against all valid .processed files
-    in a given directory, writing the results to a TSV file.
+    Infers metadata such as the experiment name, operator, and run ID from the path structure.
     """
-    print(f"--- Loading model dynamically from checkpoint: {checkpoint_path} ---")
+    metadata = {}
 
-    # --- 1. Load Model and Hyperparameters Dynamically ---
-    try:
-        model, checkpoint = load_model_dynamically(checkpoint_path)
-        model.eval()  # Set model to evaluation mode
-        datamodule_hparams = checkpoint.get("datamodule_hyper_parameters", {})
-    except (FileNotFoundError, KeyError, ImportError) as e:
-        print(f"Error: Failed to load the model. Reason: {e}")
+    # 1. Get experiment name from the parent directory
+    metadata["experiment_name"] = experiment_dir.name
+
+    # 2. Infer GNN operator from the experiment name
+    known_operators = ["gcn", "tag", "cheb", "sgc", "ssg"]
+    name_parts = experiment_dir.name.split("_")
+    found_operator = [op for op in known_operators if op in name_parts]
+    metadata["gnn_operator_inferred"] = found_operator[0] if found_operator else "unknown"
+
+    # 3. Parse run_id and seed from the version directory (e.g., 'run_0_seed_42')
+    version_dir_name = ckpt_path.parent.parent.name
+    match = re.match(r"run_(\d+)_seed_(\d+)", version_dir_name)
+    if match:
+        metadata["run_id_inferred"] = int(match.group(1))
+        metadata["seed_inferred"] = int(match.group(2))
+
+    return metadata
+
+
+def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path, output_parquet_path: Path):
+    """
+    Finds all model checkpoints in an experiment directory, evaluates each against
+    all files in a data directory, and aggregates results into a single Parquet file.
+    It prefers 'best.ckpt' if available in a checkpoint directory, otherwise uses any other '.ckpt' file.
+    """
+    print(f"--- Scanning for model checkpoints in: {experiment_dir} ---")
+    all_ckpts = sorted(list(experiment_dir.glob("**/checkpoints/*.ckpt")))
+
+    # Group checkpoints by their parent directory to handle multiple files per run
+    checkpoints_by_dir: Dict[Path, List[Path]] = {}
+    for ckpt_path in all_ckpts:
+        dir_path = ckpt_path.parent
+        if dir_path not in checkpoints_by_dir:
+            checkpoints_by_dir[dir_path] = []
+        checkpoints_by_dir[dir_path].append(ckpt_path)
+
+    # Select the definitive checkpoint for each run directory
+    final_checkpoint_paths = []
+    for dir_path, ckpts in checkpoints_by_dir.items():
+        best_ckpt_path = dir_path / "best.ckpt"
+        # Check for existence of 'best.ckpt' in the list of found checkpoints
+        if best_ckpt_path in ckpts:
+            final_checkpoint_paths.append(best_ckpt_path)  # Prefer 'best.ckpt'
+        elif ckpts:
+            # If no 'best.ckpt', take the first available checkpoint.
+            # This is useful if only one checkpoint is saved without being named 'best'.
+            final_checkpoint_paths.append(ckpts[0])
+
+    checkpoint_paths = sorted(final_checkpoint_paths)
+
+    if not checkpoint_paths:
+        print(f"Error: No '.ckpt' files found in any 'checkpoints' subdirectory of '{experiment_dir}'.")
         return
 
-    # Extract necessary hparams for the datamodule
-    label_to_predict = datamodule_hparams.get("label_to_predict")
-    if not label_to_predict:
-        print("Error: 'label_to_predict' not found in checkpoint. Cannot proceed.")
-        return
-    batch_size = datamodule_hparams.get("batch_size", 128)
-    num_workers = datamodule_hparams.get("num_workers", 0)
+    print(f"Found {len(checkpoint_paths)} model checkpoints to evaluate.")
 
-    # --- 2. Find and Iterate Through Test Files ---
-    all_results: List[Dict[str, Any]] = []
-    corrupted_files: List[Dict[str, str]] = []
-    test_files = sorted(list(Path(data_directory).glob("*.processed")))
-
+    test_files = sorted(list(data_directory.glob("*.processed")))
     if not test_files:
-        print(f"Error: No '.processed' files found in directory '{data_directory}'.")
+        print(f"Error: No '.processed' files found in data directory '{data_directory}'.")
         return
 
-    print(f"\nFound {len(test_files)} files to test. Starting evaluation...")
+    print(f"Found {len(test_files)} test datasets to evaluate against.")
 
-    for data_file in test_files:
-        print(f"  -> Testing on: {data_file.name}")
+    all_results: List[Dict[str, Any]] = []
+
+    for ckpt_path in tqdm(checkpoint_paths, desc="Evaluating Checkpoints"):
         try:
-            # --- 3. Load and Prepare Data for a Single File ---
-            new_test_data = load_spn_data_from_files(data_file)
-            if not new_test_data:
-                raise ValueError("Loaded data is empty or invalid.")
+            # --- NEW: Parse metadata from the path structure ---
+            path_metadata = parse_metadata_from_path(ckpt_path, experiment_dir)
 
-            data_module = SPNDataModule(
-                label_to_predict=label_to_predict,
-                train_data_list=[],
-                val_data_list=[],
-                test_data_list=new_test_data,
-                batch_size=batch_size,
-                num_workers=num_workers,
-            )
+            model, checkpoint = load_model_dynamically(str(ckpt_path))
+            model.eval()
+            model_hparams = checkpoint.get("hyper_parameters", {})
+            datamodule_hparams = checkpoint.get("datamodule_hyper_parameters", {})
 
-            # --- 4. Run Test ---
-            trainer = pl.Trainer(
-                accelerator="auto",
-                logger=False,
-                enable_progress_bar=False,
-                enable_model_summary=False,
-            )
-            test_metrics = trainer.test(model, datamodule=data_module, verbose=False)
+            label_to_predict = datamodule_hparams.get("label_to_predict")
+            batch_size = datamodule_hparams.get("batch_size", 128)
+            num_workers = datamodule_hparams.get("num_workers", 0)
 
-            if test_metrics:
-                result_dict = test_metrics[0]
-                result_dict["filename"] = data_file.name
-                all_results.append(result_dict)
-            else:
-                raise RuntimeError("Trainer.test() produced no metrics.")
+            for data_file in tqdm(test_files, desc=f"Testing {ckpt_path.parent.parent.name}", leave=False):
+                new_test_data = load_spn_data_from_files(data_file)
+                if not new_test_data:
+                    continue
+
+                data_module = SPNDataModule(
+                    label_to_predict=label_to_predict,
+                    train_data_list=[],
+                    val_data_list=[],
+                    test_data_list=new_test_data,
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                )
+
+                trainer = pl.Trainer(
+                    accelerator="auto", logger=False, enable_progress_bar=False, enable_model_summary=False
+                )
+                test_metrics = trainer.test(model, datamodule=data_module, verbose=False)
+
+                if test_metrics:
+                    result_dict = test_metrics[0]
+                    result_dict["test_dataset"] = data_file.name
+
+                    # Add path-based and hyperparameter metadata
+                    result_dict.update(path_metadata)
+                    for param, value in model_hparams.items():
+                        if isinstance(value, (str, int, float, bool)):
+                            result_dict[param] = value
+                    all_results.append(result_dict)
 
         except Exception as e:
-            corrupted_files.append({"filename": data_file.name, "error": str(e)})
-            print(f"     [SKIPPED] Could not process file. Reason: {e}")
+            print(f"Warning: Failed to process checkpoint {ckpt_path}. Reason: {e}")
+            continue
 
-    # --- 5. Write Aggregated Results to TSV File ---
     if all_results:
-        first_result_keys = list(all_results[0].keys())
-        first_result_keys.remove("filename")
-        fieldnames = ["filename"] + sorted(first_result_keys)
+        print(f"\n--- Aggregating {len(all_results)} results and saving to {output_parquet_path} ---")
+        results_df = pd.DataFrame(all_results)
 
-        print(f"\n--- Writing {len(all_results)} results to {output_tsv_path} ---")
-        with open(output_tsv_path, "w", newline="", encoding="utf-8") as tsvfile:
-            writer = csv.DictWriter(tsvfile, fieldnames=fieldnames, delimiter="\t")
-            writer.writeheader()
-            writer.writerows(all_results)
+        output_parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        results_df.to_parquet(output_parquet_path, index=False)
+        print("Evaluation results saved successfully.")
     else:
-        print("\n--- No successful tests were completed. No output file generated. ---")
-
-    # --- 6. Report Corrupted Files ---
-    if corrupted_files:
-        print("\n--- The following files failed to process: ---")
-        for item in corrupted_files:
-            print(f"- {item['filename']}: {item['error']}")
+        print("\n--- No successful evaluations were completed. No output file generated. ---")
 
 
 def get_test_args():
     """Parses command-line arguments for the test script."""
-    parser = argparse.ArgumentParser(description="Evaluate a trained GNN model on a directory of SPN data.")
-    parser.add_argument("checkpoint_path", type=str, help="Path to the model checkpoint (.ckpt) file.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate all trained models from an experiment on a directory of SPN data."
+    )
     parser.add_argument(
-        "--data_dir",
-        type=str,
-        default="./Data",
-        help="Directory containing the .processed test files.",
+        "experiment_dir",
+        type=Path,
+        help="Path to the main experiment log directory (e.g., lightning_logs/my_experiment).",
+    )
+    parser.add_argument(
+        "--data_dir", type=Path, default=Path("./Data"), help="Directory containing the .processed test files."
     )
     parser.add_argument(
         "--output_file",
-        type=str,
-        default="test_results.tsv",
-        help="Path to the output TSV file for the results.",
+        type=Path,
+        default=Path("results/cross_dataset_evaluation.parquet"),
+        help="Path to the output Parquet file for the results.",
     )
     return parser.parse_args()
 
@@ -186,9 +195,8 @@ def get_test_args():
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
     args = get_test_args()
-
-    evaluate_model_on_directory(
-        checkpoint_path=args.checkpoint_path,
+    evaluate_experiment_on_directory(
+        experiment_dir=args.experiment_dir,
         data_directory=args.data_dir,
-        output_tsv_path=args.output_file,
+        output_parquet_path=args.output_file,
     )

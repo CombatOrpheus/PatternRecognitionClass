@@ -8,10 +8,11 @@ from typing import List, Tuple
 import lightning.pytorch as pl
 import optuna
 import torch
-from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.callbacks import EarlyStopping, TQDMProgressBar
 from lightning.pytorch.loggers import TensorBoardLogger
 from optuna.integration import PyTorchLightningPruningCallback
 from torch_geometric.data import Data
+from tqdm import tqdm
 
 from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model
 from src.PetriNets import load_spn_data_from_files, SPNAnalysisResultLabel
@@ -41,6 +42,9 @@ def get_args():
         default="gcn",
         choices=["gcn", "tag", "cheb", "sgc", "ssg"],
         help="The GNN operator to optimize.",
+    )
+    model_group.add_argument(
+        "--all", action="store_true", help="If specified, runs optimization for all available GNN operators."
     )
 
     opt_group = parser.add_argument_group("Optimization Settings")
@@ -115,7 +119,7 @@ def objective(
         "hidden_dim": trial.suggest_categorical("hidden_dim", [16, 32, 64, 128, 256]),
         "num_layers_gnn": trial.suggest_int("num_layers_gnn", 2, 20),
         "num_layers_mlp": trial.suggest_int("num_layers_mlp", 1, 5),
-        "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512, 1024, 2048]),
+        "batch_size": trial.suggest_categorical("batch_size", [256, 512, 1024, 2048, 4096]),
         "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
     }
 
@@ -151,15 +155,16 @@ def objective(
     logger = TensorBoardLogger(save_dir="optuna_logs", name=logger_name, version=f"trial_{trial.number}")
     pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val_loss")
     early_stop_callback = EarlyStopping(monitor="val_loss", patience=args.patience, verbose=False, mode="min")
+    progress_bar_callback = TQDMProgressBar()
 
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         accelerator="auto",
         devices="auto",
         logger=logger,
-        callbacks=[early_stop_callback, pruning_callback],
-        enable_progress_bar=True,
+        callbacks=[early_stop_callback, pruning_callback, progress_bar_callback],
         enable_model_summary=False,
+        log_every_n_steps=5,
     )
 
     try:
@@ -176,58 +181,78 @@ def main():
     args = get_args()
     args.storage_dir.mkdir(parents=True, exist_ok=True)
 
+    all_gnn_operators = ["gcn", "tag", "cheb", "sgc", "ssg"]
+    operators_to_run = all_gnn_operators if args.all else [args.gnn_operator]
+
+    if args.all:
+        print(f"--- Running optimization for all {len(operators_to_run)} GNN operators ---")
+
     cache_dir = None
     try:
-        # --- NEW: Prepare and cache data before starting the study ---
+        # Prepare and cache data once before starting the studies
         processed_train_data, processed_val_data, cache_dir = prepare_and_cache_data(args)
 
-        study_name = f"{args.study_name}_{args.gnn_operator}"
-        storage_name = f"sqlite:///{args.storage_dir / study_name}.db"
+        for gnn_operator in tqdm(operators_to_run):
+            run_args = argparse.Namespace(**vars(args))
+            run_args.gnn_operator = gnn_operator
 
-        study = optuna.create_study(
-            study_name=study_name,
-            storage=storage_name,
-            direction="minimize",
-            pruner=optuna.pruners.MedianPruner(),
-            load_if_exists=True,
-        )
+            study_name = f"{run_args.study_name}_{run_args.gnn_operator}"
+            storage_name = f"sqlite:///{run_args.storage_dir / study_name}.db"
 
-        study.set_user_attr("train_file", str(args.train_file))
-        study.set_user_attr("val_file", str(args.val_file))
-        study.set_user_attr("label", args.label)
-        study.set_user_attr("prediction_level", args.prediction_level)
-        study.set_user_attr("gnn_operator", args.gnn_operator)
+            study = optuna.create_study(
+                study_name=study_name,
+                storage=storage_name,
+                direction="minimize",
+                pruner=optuna.pruners.MedianPruner(),
+                load_if_exists=True,
+            )
 
-        print(f"--- Starting Optuna study '{study_name}' for operator '{args.gnn_operator}' ---")
-        study.optimize(
-            lambda trial: objective(trial, args, processed_train_data, processed_val_data),
-            n_trials=args.n_trials,
-            timeout=args.timeout,
-            n_jobs=1,
-        )
+            # Enqueue trials with large batch sizes if the study is new.
+            if len(study.get_trials()) == 0:
+                print("--- Enqueuing initial trials with large batch sizes ---")
+                study.enqueue_trial({"batch_size": 4096})
+                study.enqueue_trial({"batch_size": 2048})
+                study.enqueue_trial({"batch_size": 1024})
+
+            study.set_user_attr("train_file", str(run_args.train_file))
+            study.set_user_attr("val_file", str(run_args.val_file))
+            study.set_user_attr("label", run_args.label)
+            study.set_user_attr("prediction_level", run_args.prediction_level)
+            study.set_user_attr("gnn_operator", run_args.gnn_operator)
+
+            print(f"--- Starting Optuna study '{study_name}' for operator '{run_args.gnn_operator}' ---")
+            study.optimize(
+                lambda trial: objective(trial, run_args, processed_train_data, processed_val_data),
+                n_trials=run_args.n_trials,
+                timeout=run_args.timeout,
+                n_jobs=1,
+            )
+
+            print(f"\n--- Optimization Finished for operator '{run_args.gnn_operator}' ---")
+            pruned_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
+            complete_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.COMPLETE])
+
+            print("Study statistics: ")
+            print(f"  Number of finished trials: {len(study.trials)}")
+            print(f"  Number of pruned trials: {len(pruned_trials)}")
+            print(f"  Number of complete trials: {len(complete_trials)}")
+
+            print("Best trial:")
+            best_trial = study.best_trial
+            print(f"  Value (val_loss): {best_trial.value}")
+            print("  Params: ")
+            for key, value in best_trial.params.items():
+                print(f"    {key}: {value}")
+            print("-" * 80)
 
     finally:
-        # --- NEW: Cleanup the cache directory ---
+        # Cleanup the cache directory
         if cache_dir:
             print(f"\n--- Cleaning up cache directory: {cache_dir} ---")
             shutil.rmtree(cache_dir)
             print("Cache cleaned up successfully.")
 
-    print("\n--- Optimization Finished ---")
-    pruned_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
-    complete_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.COMPLETE])
-
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
-    print(f"  Number of pruned trials: {len(pruned_trials)}")
-    print(f"  Number of complete trials: {len(complete_trials)}")
-
-    print("Best trial:")
-    best_trial = study.best_trial
-    print(f"  Value (val_loss): {best_trial.value}")
-    print("  Params: ")
-    for key, value in best_trial.params.items():
-        print(f"    {key}: {value}")
+    print("\n--- All optimization studies finished. ---")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from torch import from_numpy
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
+from tqdm import tqdm
 
 from src.PetriNets import SPNData, SPNAnalysisResultLabel
 
@@ -60,10 +61,10 @@ class SPNDataModule(pl.LightningDataModule):
         self.transform = transform
         self.label_scaler: Optional[StandardScaler] = None
 
-    def _process_list(self, raw_data_list: List[SPNData]) -> List[Data]:
+    def _process_list(self, raw_data_list: List[SPNData], desc: Optional[str] = None) -> List[Data]:
         """Converts a list of raw SPNData objects to PyG Data objects."""
         processed_data = []
-        for net in raw_data_list:
+        for net in tqdm(raw_data_list, leave=False, desc=desc):
             node_features, edge_features, edge_pairs = net.to_information()
             label_raw = net.get_analysis_result(self.hparams.label_to_predict)
 
@@ -118,15 +119,12 @@ class SPNDataModule(pl.LightningDataModule):
 
         # --- Process data splits ---
         if (stage == "fit" or stage is None) and self.train_raw:
-            print("Processing train data...")
-            self.train_data = self._process_list(self.train_raw)
+            self.train_data = self._process_list(self.train_raw, "Processing training data...")
             if self.val_raw:
-                print("Processing val data...")
-                self.val_data = self._process_list(self.val_raw)
+                self.val_data = self._process_list(self.val_raw, "Processing validation data...")
 
         if (stage == "test" or stage is None) and self.test_raw:
-            print("Processing test data...")
-            self.test_data = self._process_list(self.test_raw)
+            self.test_data = self._process_list(self.test_raw, "Processing training data...")
 
     def inverse_transform_label(self, y_tensor: torch.Tensor) -> np.ndarray:
         """

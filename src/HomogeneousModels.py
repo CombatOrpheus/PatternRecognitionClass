@@ -22,7 +22,7 @@ from torch_geometric.nn import (
     SSGConv,
     global_add_pool,
 )
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
+from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score, MeanAbsolutePercentageError
 
 
 class BaseGNN_SPN_Model(pl.LightningModule):
@@ -52,6 +52,7 @@ class BaseGNN_SPN_Model(pl.LightningModule):
             setattr(self, f"{split}_mse", MeanSquaredError())
             setattr(self, f"{split}_rmse", MeanSquaredError(squared=False))
             setattr(self, f"{split}_r2", R2Score())
+            setattr(self, f"{split}_mape", MeanAbsolutePercentageError())
 
     def _log_metrics(self, prefix: str, y_pred: torch.Tensor, y_true: torch.Tensor):
         """Updates and logs all metrics for a given data split."""

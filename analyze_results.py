@@ -1,11 +1,11 @@
 import argparse
 from pathlib import Path
+import itertools # Import itertools for pairwise combinations
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import scikit_posthocs as sp
 import scipy.stats as ss
-import seaborn as sns
 
 
 def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_mae"):
@@ -70,6 +70,32 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
     except ValueError as e:
         print(f"Could not perform Friedman test. Reason: {e}")
         return
+
+    # Wilcoxon signed-rank test for pairwise comparisons
+    print(f"\n--- Performing Wilcoxon signed-rank tests on metric: '{metric}' ---")
+    print("This test checks for significant differences between pairs of models.")
+
+    # Create a DataFrame to store the p-values
+    wilcoxon_results = pd.DataFrame(index=model_names, columns=model_names)
+
+    # Get the performance data for each model
+    model_data = {name: data[metric].values for name, data in df.groupby("gnn_operator")}
+
+    # Perform pairwise Wilcoxon tests
+    for model1, model2 in itertools.combinations(model_names, 2):
+        try:
+            stat, p_value = ss.wilcoxon(model_data[model1], model_data[model2])
+            wilcoxon_results.loc[model1, model2] = p_value
+            wilcoxon_results.loc[model2, model1] = p_value
+            print(f"  {model1} vs {model2}: statistic={stat:.4f}, p-value={p_value:.4g}")
+        except ValueError as e:
+            print(f"  Could not perform Wilcoxon test for {model1} vs {model2}. Reason: {e}")
+
+    # Save the Wilcoxon results to a CSV file
+    wilcoxon_table_path = output_dir / "wilcoxon_pairwise_pvalues.csv"
+    wilcoxon_results.to_csv(wilcoxon_table_path, float_format="%.4g")
+    print(f"Wilcoxon p-value table saved to: {wilcoxon_table_path}")
+
 
     # Post-hoc Conover test
     posthoc_results = sp.posthoc_conover_friedman(df, melted=True, y_col=metric, block_col="run_id", block_id_col="run_id", group_col="gnn_operator")

@@ -22,7 +22,13 @@ from torch_geometric.nn import (
     SSGConv,
     global_add_pool,
 )
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score, MeanAbsolutePercentageError
+from torchmetrics import MetricCollection, RelativeSquaredError
+from torchmetrics.regression import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2Score,
+    MeanAbsolutePercentageError,
+)
 
 
 class BaseGNN_SPN_Model(pl.LightningModule):
@@ -47,27 +53,27 @@ class BaseGNN_SPN_Model(pl.LightningModule):
 
     def _initialize_metrics(self):
         """Instantiates regression metrics for train, val, and test splits."""
+        # Using MetricCollection to group metrics for cleaner code.
         for split in ["train", "val", "test"]:
-            setattr(self, f"{split}_mae", MeanAbsoluteError())
-            setattr(self, f"{split}_mse", MeanSquaredError())
-            setattr(self, f"{split}_rmse", MeanSquaredError(squared=False))
-            setattr(self, f"{split}_r2", R2Score())
-            setattr(self, f"{split}_mape", MeanAbsolutePercentageError())
+            metrics = MetricCollection(
+                {
+                    "mae": MeanAbsoluteError(),
+                    "mse": MeanSquaredError(),
+                    "rmse": MeanSquaredError(squared=False),
+                    "rse": RelativeSquaredError(),
+                    "rrse": RelativeSquaredError(squared=False),
+                    "r2": R2Score(),
+                    "mape": MeanAbsolutePercentageError(),
+                },
+                prefix=f"{split}_",
+            )
+            setattr(self, f"{split}_metrics", metrics)
 
     def _log_metrics(self, prefix: str, y_pred: torch.Tensor, y_true: torch.Tensor):
         """Updates and logs all metrics for a given data split."""
-        for metric_name in ["mae", "mse", "rmse", "r2"]:
-            metric = getattr(self, f"{prefix}_{metric_name}")
-            metric.update(y_pred, y_true)
-            # Log with prog_bar for key metrics, and on_epoch for all
-            prog_bar = metric_name in ["mae", "rmse"]
-            self.log(
-                f"{prefix}_{metric_name}",
-                metric,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=prog_bar,
-            )
+        metrics_collection = getattr(self, f"{prefix}_metrics")
+        metrics_collection.update(y_pred, y_true)
+        self.log_dict(metrics_collection, on_step=False, on_epoch=True)
 
     def training_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
         """Performs a single training step."""

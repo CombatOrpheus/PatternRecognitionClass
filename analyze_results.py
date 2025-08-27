@@ -1,11 +1,12 @@
 import argparse
+import itertools  # Import itertools for pairwise combinations
 from pathlib import Path
-import itertools # Import itertools for pairwise combinations
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import scikit_posthocs as sp
 import scipy.stats as ss
+import seaborn as sns
 
 
 def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_mae"):
@@ -39,8 +40,10 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
             std_mae=("test_mae", "std"),
             mean_rmse=("test_rmse", "mean"),
             std_rmse=("test_rmse", "std"),
-            #mean_mape=("test_mape", "mean"),
-            #std_mape=("test_mape", "std"),
+            mean_medae=("test_medae", "mean"),
+            std_medae=("test_medae", "std"),
+            mean_mape=("test_mape", "mean"),
+            std_mape=("test_mape", "std"),
         )
         .reset_index()
     )
@@ -154,7 +157,7 @@ def get_analysis_args():
         "--metric",
         type=str,
         default="test_mae",
-        choices=["test_mae", "test_rmse", "test_mape", "test_medae", "test_r2"],
+        choices=["test_mae", "test_mse", "test_rmse", "test_rse", "test_rrse", "test_r2", "test_mape", "test_r2"],
         help="The primary metric to use for statistical comparisons and ranking.",
     )
     return parser.parse_args()

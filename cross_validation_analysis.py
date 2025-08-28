@@ -6,6 +6,16 @@ import pandas as pd
 import scipy.stats as ss
 import seaborn as sns
 
+# Define the full list of test metrics available from the model
+ALL_TEST_METRICS = [
+    "test_mae",
+    "test_mse",
+    "test_rmse",
+    "test_rse",
+    "test_rrse",
+    "test_r2",
+    "test_mape",
+]
 
 def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metric: str = 'test_mae'):
     """
@@ -21,12 +31,12 @@ def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metri
         raise FileNotFoundError(f"Results file not found at: {results_file}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"--- Cross-evaluation analysis outputs will be saved to: {output_dir} ---")
+    print(f"--- Cross-evaluation analysis for metric '{metric}' will be saved to: {output_dir} ---")
 
     df = pd.read_parquet(results_file)
     print("--- Cross-evaluation results loaded successfully ---")
 
-    # 1. Create a pivot table for the heatmap
+    # 1. Create a pivot table for the heatmap for the specified metric
     performance_pivot = df.pivot_table(
         index='gnn_operator',
         columns='cross_eval_dataset',
@@ -51,62 +61,62 @@ def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metri
     plt.xticks(rotation=45, ha='right')
     plt.yticks(rotation=0)
     plt.tight_layout()
-    # --- MODIFIED: Save in high-quality vector and raster formats ---
-    heatmap_path_svg = output_dir / "cross_eval_performance_heatmap.svg"
+    heatmap_path_svg = output_dir / f"cross_eval_heatmap_{metric}.svg"
     plt.savefig(heatmap_path_svg, format='svg', bbox_inches='tight')
     plt.close()
     print(f"Performance heatmap saved to: {heatmap_path_svg}")
 
-    # 3. Generate and save summary statistics with robustness score
-    print("\n--- Generating summary statistics ---")
+    # 3. Generate and save summary statistics for the specified metric
+    print(f"\n--- Generating summary statistics for '{metric}' ---")
     model_robustness = performance_pivot.std(axis=1).rename('robustness_std')
 
     summary_by_model = df.groupby('gnn_operator')[metric].agg(['mean', 'std']).reset_index()
     summary_by_model = summary_by_model.merge(model_robustness, on='gnn_operator')
 
-    summary_by_model_path = output_dir / "summary_by_model.csv"
+    summary_by_model_path = output_dir / f"summary_by_model_{metric}.csv"
     summary_by_model.to_csv(summary_by_model_path, index=False, float_format='%.4f')
     print("\nAverage performance and robustness by model (across all datasets):")
     print(summary_by_model)
 
     summary_by_dataset = df.groupby('cross_eval_dataset')[metric].agg(['mean', 'std']).reset_index()
-    summary_by_dataset_path = output_dir / "summary_by_dataset.csv"
+    summary_by_dataset_path = output_dir / f"summary_by_dataset_{metric}.csv"
     summary_by_dataset.to_csv(summary_by_dataset_path, index=False, float_format='%.4f')
     print("\nAverage difficulty by dataset (across all models):")
     print(summary_by_dataset)
 
     # 4. Statistical Test for Generalization
-    print(f"\n--- Performing Friedman test on model ranks across datasets ---")
+    print(f"\n--- Performing Friedman test on model ranks across datasets for '{metric}' ---")
     df['rank'] = df.groupby(['run_id', 'cross_eval_dataset'])[metric].rank()
     rank_pivot = df.pivot_table(index=['run_id', 'cross_eval_dataset'], columns='gnn_operator', values='rank')
 
     model_rank_groups = [rank_pivot[col].dropna().values for col in rank_pivot.columns]
 
     if len(model_rank_groups) >= 2:
-        friedman_stat, p_value = ss.friedmanchisquare(*model_rank_groups)
-        print(f"Friedman Test on Ranks: statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
-        if p_value < 0.05:
-            print("Result is significant (p < 0.05): There is a statistically significant difference in model generalization performance.")
-        else:
-            print("Result is not significant (p >= 0.05): There is no statistically significant difference in model generalization.")
+        try:
+            friedman_stat, p_value = ss.friedmanchisquare(*model_rank_groups)
+            print(f"Friedman Test on Ranks: statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
+            if p_value < 0.05:
+                print("Result is significant (p < 0.05): There is a statistically significant difference in model generalization performance.")
+            else:
+                print("Result is not significant (p >= 0.05): There is no statistically significant difference in model generalization.")
+        except ValueError as e:
+            print(f"Could not perform Friedman test. Reason: {e}")
 
     # 5. Performance Stability Visualization
-    print(f"\n--- Generating performance stability plots (boxplots) ---")
+    print(f"\n--- Generating performance stability plots for '{metric}' ---")
     num_datasets = df['cross_eval_dataset'].nunique()
     g = sns.FacetGrid(df, col="cross_eval_dataset", col_wrap=min(4, num_datasets), sharey=True, height=4)
     g.map_dataframe(sns.boxplot, x='gnn_operator', y=metric)
-    g.fig.suptitle('Model Performance Stability Across Datasets', y=1.03)
+    g.fig.suptitle(f'Model Performance Stability Across Datasets ({metric})', y=1.03)
     g.set_axis_labels("GNN Operator", metric.replace("_", " ").title())
     g.set_xticklabels(rotation=45, ha='right')
     g.tight_layout()
-    # --- MODIFIED: Save in high-quality vector and raster formats ---
-    stability_plot_path_svg = output_dir / "cross_eval_stability_boxplots.svg"
+    stability_plot_path_svg = output_dir / f"cross_eval_stability_boxplots_{metric}.svg"
     plt.savefig(stability_plot_path_svg, format='svg')
     plt.close()
     print(f"Stability boxplots saved to: {stability_plot_path_svg}")
 
-    print("\n--- Cross-evaluation analysis complete. ---")
-
+    print(f"\n--- Cross-evaluation analysis for '{metric}' complete. ---")
 
 def get_analysis_args():
     """Parses command-line arguments for the analysis script."""
@@ -126,16 +136,40 @@ def get_analysis_args():
         "--metric",
         type=str,
         default="test_mae",
-        choices=["test_mae", "test_rmse", "test_mape", "test_medae", "test_r2"],
+        choices=ALL_TEST_METRICS,
         help="The primary metric to use for the analysis.",
+    )
+    parser.add_argument(
+        "--all-metrics",
+        action="store_true",
+        help="If specified, runs the analysis for all available metrics, creating a subdirectory for each.",
     )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = get_analysis_args()
-    analyze_cross_evaluation_results(
-        results_file=args.results_file,
-        output_dir=args.output_dir,
-        metric=args.metric,
-    )
+
+    if args.all_metrics:
+        print("--- Running cross-evaluation analysis for all available metrics ---")
+        if not args.results_file.exists():
+            raise FileNotFoundError(f"Results file not found at: {args.results_file}")
+        df = pd.read_parquet(args.results_file)
+
+        metrics_to_run = [m for m in ALL_TEST_METRICS if m in df.columns]
+        print(f"Found metrics in file: {metrics_to_run}")
+
+        for metric in metrics_to_run:
+            metric_output_dir = args.output_dir / metric
+            analyze_cross_evaluation_results(
+                results_file=args.results_file,
+                output_dir=metric_output_dir,
+                metric=metric,
+            )
+            print("-" * 80)
+    else:
+        analyze_cross_evaluation_results(
+            results_file=args.results_file,
+            output_dir=args.output_dir,
+            metric=args.metric,
+        )

@@ -8,6 +8,16 @@ import scikit_posthocs as sp
 import scipy.stats as ss
 import seaborn as sns
 
+# Define the full list of test metrics available from the model
+ALL_TEST_METRICS = [
+    "test_mae",
+    "test_mse",
+    "test_rmse",
+    "test_rse",
+    "test_rrse",
+    "test_r2",
+    "test_mape",
+]
 
 def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_mae"):
     """
@@ -24,37 +34,40 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
 
     # Create the output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"--- Analysis outputs will be saved to: {output_dir} ---")
+    print(f"--- Analysis for metric '{metric}' will be saved to: {output_dir} ---")
 
     # Load the results from the Parquet file
     df = pd.read_parquet(results_file)
     print("--- Results data loaded successfully ---")
-    print(df.info())
 
-    # 1. Generate and save the descriptive statistics table
+    # 1. Generate and save the descriptive statistics table for ALL available metrics
     print(f"\n--- Generating descriptive statistics (grouped by 'gnn_operator') ---")
-    summary_stats = (
-        df.groupby("gnn_operator")
-        .agg(
-            mean_mae=("test_mae", "mean"),
-            std_mae=("test_mae", "std"),
-            mean_rmse=("test_rmse", "mean"),
-            std_rmse=("test_rmse", "std"),
-            mean_medae=("test_medae", "mean"),
-            std_medae=("test_medae", "std"),
-            mean_mape=("test_mape", "mean"),
-            std_mape=("test_mape", "std"),
-        )
-        .reset_index()
-    )
 
-    summary_table_path = output_dir / "summary_statistics.csv"
-    summary_stats.to_csv(summary_table_path, index=False, float_format="%.4f")
-    print(f"Descriptive statistics table saved to: {summary_table_path}")
-    print(summary_stats)
+    # Find which of the possible metrics are actually in the dataframe
+    available_metrics = [m for m in ALL_TEST_METRICS if m in df.columns]
+    if not available_metrics:
+        print("No recognized metric columns found in the results file. Skipping descriptive statistics.")
+    else:
+        # Create the aggregation dictionary dynamically
+        agg_dict = {}
+        for m in available_metrics:
+            metric_suffix = m.replace("test_", "")  # e.g., "mae"
+            agg_dict[f"mean_{metric_suffix}"] = (m, "mean")
+            agg_dict[f"std_{metric_suffix}"] = (m, "std")
 
-    # 2. Perform statistical tests
-    print(f"\n--- Performing statistical tests on metric: '{metric}' ---")
+        summary_stats = df.groupby("gnn_operator").agg(**agg_dict).reset_index()
+
+        summary_table_path = output_dir / "summary_statistics.csv"
+        summary_stats.to_csv(summary_table_path, index=False, float_format="%.4f")
+        print(f"Descriptive statistics table for all metrics saved to: {summary_table_path}")
+        print(summary_stats)
+
+    # 2. Perform statistical tests for the SPECIFIED metric
+    print(f"\n--- Performing statistical tests on primary metric: '{metric}' ---")
+
+    if metric not in df.columns:
+        print(f"Primary metric '{metric}' not found in results file. Skipping statistical tests and plots.")
+        return
 
     # Prepare data for Friedman test (list of arrays, one for each group)
     model_groups = [group[metric].values for name, group in df.groupby("gnn_operator")]
@@ -95,19 +108,18 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
             print(f"  Could not perform Wilcoxon test for {model1} vs {model2}. Reason: {e}")
 
     # Save the Wilcoxon results to a CSV file
-    wilcoxon_table_path = output_dir / "wilcoxon_pairwise_pvalues.csv"
+    wilcoxon_table_path = output_dir / f"wilcoxon_pvalues_{metric}.csv"
     wilcoxon_results.to_csv(wilcoxon_table_path, float_format="%.4g")
     print(f"Wilcoxon p-value table saved to: {wilcoxon_table_path}")
 
-
     # Post-hoc Conover test
-    posthoc_results = sp.posthoc_conover_friedman(df, melted=True, y_col=metric, block_col="run_id", block_id_col="run_id", group_col="gnn_operator")
+    posthoc_results = sp.posthoc_conover_friedman(df, melted=True, y_col=metric, group_col="gnn_operator", block_col="run_id", block_id_col="run_id")
 
-    # 3. Generate and save plots
-    print("\n--- Generating and saving plots ---")
+    # 3. Generate and save plots for the SPECIFIED metric
+    print(f"\n--- Generating and saving plots for '{metric}' ---")
 
     # Critical Difference Diagram
-    avg_rank = df.groupby("run_id")[metric].rank(pct=True).groupby(df["gnn_operator"]).mean()
+    avg_rank = df.groupby("run_id")[metric].rank().groupby(df["gnn_operator"]).mean()
 
     plt.figure(figsize=(10, max(4, len(model_names) * 0.5)))  # Adjust height based on number of models
     sp.critical_difference_diagram(
@@ -117,7 +129,7 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
         label_fmt_right="  [{rank:.3f}] {label}",
     )
     plt.title(f"Critical Difference Diagram for {metric}")
-    cd_diagram_path = output_dir / "critical_difference_diagram.svg"
+    cd_diagram_path = output_dir / f"cd_diagram_{metric}.svg"
     plt.savefig(cd_diagram_path, bbox_inches="tight")
     plt.close()
     print(f"Critical difference diagram saved to: {cd_diagram_path}")
@@ -131,12 +143,12 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
     plt.xlabel("GNN Operator")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
-    box_plot_path = output_dir / "performance_distribution_boxplot.svg"
+    box_plot_path = output_dir / f"boxplot_{metric}.svg"
     plt.savefig(box_plot_path)
     plt.close()
     print(f"Performance distribution box plot saved to: {box_plot_path}")
 
-    print("\n--- Analysis complete. ---")
+    print(f"\n--- Analysis for '{metric}' complete. ---")
 
 
 def get_analysis_args():
@@ -157,16 +169,43 @@ def get_analysis_args():
         "--metric",
         type=str,
         default="test_mae",
-        choices=["test_mae", "test_mse", "test_rmse", "test_rse", "test_rrse", "test_r2", "test_mape", "test_r2"],
+        choices=ALL_TEST_METRICS,
         help="The primary metric to use for statistical comparisons and ranking.",
+    )
+    parser.add_argument(
+        "--all-metrics",
+        action="store_true",
+        help="If specified, runs the analysis for all available metrics, creating a subdirectory for each.",
     )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = get_analysis_args()
-    analyze_results(
-        results_file=args.results_file,
-        output_dir=args.output_dir,
-        metric=args.metric,
-    )
+
+    if args.all_metrics:
+        print("--- Running analysis for all available metrics ---")
+        # Load the dataframe once to see which metrics are available
+        if not args.results_file.exists():
+            raise FileNotFoundError(f"Results file not found at: {args.results_file}")
+        df = pd.read_parquet(args.results_file)
+
+        metrics_to_run = [m for m in ALL_TEST_METRICS if m in df.columns]
+        print(f"Found metrics in file: {metrics_to_run}")
+
+        for metric in metrics_to_run:
+            # Create a dedicated output directory for each metric's analysis
+            metric_output_dir = args.output_dir / metric
+            analyze_results(
+                results_file=args.results_file,
+                output_dir=metric_output_dir,
+                metric=metric,
+            )
+            print("-" * 80)
+    else:
+        # Run analysis only for the single, specified metric
+        analyze_results(
+            results_file=args.results_file,
+            output_dir=args.output_dir,
+            metric=args.metric,
+        )

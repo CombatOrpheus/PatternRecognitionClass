@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import List, Tuple, Literal, Union, Iterator
 
 import numpy as np
+import torch
+from torch_geometric.data import HeteroData
 
 # Define the Literal for the specific analysis result labels
 SPNAnalysisResultLabel = Literal[
@@ -191,6 +193,49 @@ class SPNData:
 
         # Return node features, edge features, and edge pairs
         return node_features, edge_features, edge_pairs
+
+    def to_hetero_information(self) -> "HeteroData":
+        """
+        Converts the Petri net into a PyG HeteroData object, including
+        type mappings required for models like HEATConv.
+        """
+        data = HeteroData()
+
+        num_places = self.spn.shape[0]
+        num_transitions = self.spn.shape[1] // 2
+
+        # Node Features
+        data['place'].x = torch.from_numpy(self.spn[:, -1]).float().view(-1, 1)
+        data['transition'].x = torch.from_numpy(self.average_firing_rates).float().view(-1, 1)
+
+        # Edges and Edge Features
+        pre_conditions = self.spn[:, :num_transitions]
+        post_conditions = self.spn[:, num_transitions: 2 * num_transitions]
+
+        p_in_idx, t_in_idx = np.nonzero(pre_conditions)
+        pt_edge_index = np.stack([p_in_idx, t_in_idx], axis=0)
+        pt_edge_attr = pre_conditions[p_in_idx, t_in_idx]
+        data['place', 'to', 'transition'].edge_index = torch.from_numpy(pt_edge_index).long()
+        data['place', 'to', 'transition'].edge_attr = torch.from_numpy(pt_edge_attr).float().view(-1, 1)
+
+        p_out_idx, t_out_idx = np.nonzero(post_conditions)
+        tp_edge_index = np.stack([t_out_idx, p_out_idx], axis=0)
+        tp_edge_attr = post_conditions[p_out_idx, t_out_idx]
+        data['transition', 'to', 'place'].edge_index = torch.from_numpy(tp_edge_index).long()
+        data['transition', 'to', 'place'].edge_attr = torch.from_numpy(tp_edge_attr).float().view(-1, 1)
+
+        # **BUG FIX**: Add integer-based type mappings required by HEATConv.
+        # Node type mapping: 'place' -> 0, 'transition' -> 1
+        data['place'].node_type = torch.zeros(num_places, dtype=torch.long)
+        data['transition'].node_type = torch.ones(num_transitions, dtype=torch.long)
+
+        # Edge type mapping: ('place', 'to', 'transition') -> 0, ('transition', 'to', 'place') -> 1
+        num_pt_edges = pt_edge_index.shape[1]
+        num_tp_edges = tp_edge_index.shape[1]
+        data['place', 'to', 'transition'].edge_type = torch.zeros(num_pt_edges, dtype=torch.long)
+        data['transition', 'to', 'place'].edge_type = torch.ones(num_tp_edges, dtype=torch.long)
+
+        return data
 
     def get_analysis_result(self, label: SPNAnalysisResultLabel) -> Union[np.ndarray, float]:
         """

@@ -10,239 +10,201 @@ Both models are built on a common base class, `LightningSPNModule`, which
 handles the training, validation, and optimization logic with comprehensive metric tracking.
 """
 
+from abc import ABC, abstractmethod
 from typing import Dict, Any
 
+import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
-from torch.nn import ModuleDict
+from torch.nn import ModuleDict, ModuleList
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import HeteroConv, RGATConv, HEATConv, Linear
+from torchmetrics import MetricCollection
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
 
 class LightningSPNModule(pl.LightningModule):
     """
-    A base PyTorch Lightning module for SPN models.
-
-    This class encapsulates the shared logic for training, validation, testing,
-    and optimizer configuration. Subclasses are expected to implement the
-    `__init__` and `forward` methods to define the specific GNN architecture.
+    A base PyTorch Lightning module for SPN models. Encapsulates shared logic
+    for training, validation, testing, and optimizer configuration.
     """
 
     def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5):
-        """
-        Initializes the base Lightning module.
-
-        Args:
-            learning_rate (float): The learning rate for the optimizer.
-            weight_decay (float): The weight decay (L2 penalty) for the optimizer.
-        """
         super().__init__()
-        # `save_hyperparameters` will be called in the child classes to ensure
-        # all their specific hparams are also saved. We store these for the optimizer.
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
 
-        # --- Instantiate metrics for each node type and data split ---
         self.node_types = ["place", "transition"]
         for split in ["train", "val", "test"]:
-            metrics = ModuleDict(
+            metrics_per_node = ModuleDict(
                 {
-                    "mae": ModuleDict({nt: MeanAbsoluteError() for nt in self.node_types}),
-                    "mse": ModuleDict({nt: MeanSquaredError() for nt in self.node_types}),
-                    "rmse": ModuleDict({nt: MeanSquaredError(squared=False) for nt in self.node_types}),
-                    "r2": ModuleDict({nt: R2Score() for nt in self.node_types}),
+                    nt: MetricCollection(
+                        {
+                            "mae": MeanAbsoluteError(),
+                            "mse": MeanSquaredError(),
+                            "rmse": MeanSquaredError(squared=False),
+                            "r2": R2Score(),
+                        }
+                    )
+                    for nt in self.node_types
                 }
             )
-            setattr(self, f"{split}_metrics", metrics)
+            setattr(self, f"{split}_metrics", metrics_per_node)
 
-    def _common_step(self, batch: HeteroData, batch_idx: int, prefix: str) -> torch.Tensor:
-        """
-        Performs a common step for training, validation, and testing.
-
-        This method runs the forward pass, calculates the loss, and updates
-        metrics for each node type with a corresponding label.
-        """
+    def _common_step(self, batch: HeteroData, prefix: str) -> torch.Tensor:
         output_dict = self(batch)
         total_loss = 0.0
-        metrics = getattr(self, f"{prefix}_metrics")
+        metrics_dict = getattr(self, f"{prefix}_metrics")
 
-        # Calculate loss and update metrics for each node type that has a ground truth label
         for node_type, y_pred in output_dict.items():
-            if node_type in batch.y_dict:
-                y_true = batch.y_dict[node_type]
-                loss = F.mse_loss(y_pred.squeeze(), y_true.float())
-                total_loss += loss
+            y_true = batch[node_type].y if hasattr(batch[node_type], "y") else None
+            if y_true is None:
+                continue
 
-                # Update metrics for the specific node type
-                for metric_name, metric_module in metrics.items():
-                    metric = metric_module[node_type]
-                    metric.update(y_pred.squeeze(), y_true)
-                    # Log with a hierarchical structure for better organization
-                    self.log(
-                        f"{prefix}/{node_type}/{metric_name}",
-                        metric,
-                        on_step=False,
-                        on_epoch=True,
-                    )
+            loss = F.mse_loss(y_pred.squeeze(), y_true.float())
+            total_loss += loss
+
+            metrics = metrics_dict[node_type]
+            metrics.update(y_pred.squeeze(), y_true)
+            self.log_dict({f"{prefix}/{node_type}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
 
         if total_loss == 0.0:
-            # This can happen if a batch contains no labeled nodes.
             return torch.tensor(0.0, device=self.device, requires_grad=True)
 
-        # Log the aggregated total loss
         self.log(f"{prefix}/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True)
-
         return total_loss
 
     def training_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        return self._common_step(batch, batch_idx, "train")
+        return self._common_step(batch, "train")
 
     def validation_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        return self._common_step(batch, batch_idx, "val")
+        return self._common_step(batch, "val")
 
     def test_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        return self._common_step(batch, batch_idx, "test")
+        return self._common_step(batch, "test")
 
     def configure_optimizers(self) -> Dict[str, Any]:
-        """
-        Configures the AdamW optimizer for training.
-        """
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay,
-        )
-        return {"optimizer": optimizer}
+        return {
+            "optimizer": torch.optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        }
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
-        """
-        The forward pass of the model. Must be implemented by subclasses.
-        """
         raise NotImplementedError("Subclasses must implement the forward method.")
 
 
-class RGAT_SPN_Model(LightningSPNModule):
+class BaseHeteroGNN(LightningSPNModule, ABC):
+    """
+    An abstract base class for heterogeneous GNN models.
+    It implements the shared forward pass logic.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(kwargs.get("learning_rate", 1e-3), kwargs.get("weight_decay", 1e-5))
+        self.save_hyperparameters()
+        self.convs = ModuleList()
+        # The final linear layers are now defined in the child classes
+        self.lin = ModuleDict()
+
+    @abstractmethod
+    def _create_conv_layers(self) -> None:
+        """Must be implemented by subclasses to build the GNN layer stack."""
+        pass
+
+    def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
+        x_dict = batch.x_dict
+        for conv in self.convs:
+            extra_args = {}
+            if "node_type_dict" in batch:
+                extra_args["node_type_dict"] = batch.node_type_dict
+
+            x_dict = conv(x_dict, batch.edge_index_dict, edge_attr_dict=batch.edge_attr_dict, **extra_args)
+            x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
+
+        return {nt: self.lin[nt](x) for nt, x in x_dict.items()}
+
+
+class RGAT_SPN_Model(BaseHeteroGNN):
     """
     An SPN evaluation model using Relational Graph Attention (RGAT) layers.
     """
 
     def __init__(
         self,
+        in_channels_dict: Dict[str, int],
         hidden_channels: int,
         out_channels: int,
         num_heads: int,
         num_layers: int,
-        edge_dim: int,
-        learning_rate: float = 1e-3,
-        weight_decay: float = 1e-5,
+        **kwargs,
     ):
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(**kwargs)
         self.save_hyperparameters()
+        self._create_conv_layers()
 
-        self.convs = torch.nn.ModuleList()
-        for i in range(num_layers):
-            in_c = -1 if i == 0 else hidden_channels * num_heads
+    def _create_conv_layers(self) -> None:
+        in_channels = self.hparams.in_channels_dict
+        # The output dimension of an RGAT layer is hidden_channels * num_heads
+        layer_output_dim = self.hparams.hidden_channels * self.hparams.num_heads
+
+        for i in range(self.hparams.num_layers):
             conv = HeteroConv(
                 {
                     rel: RGATConv(
-                        in_channels=in_c,
-                        out_channels=hidden_channels,
-                        num_heads=num_heads,
-                        edge_dim=edge_dim,
+                        in_channels=(in_channels[rel[0]], in_channels[rel[2]]),
+                        out_channels=self.hparams.hidden_channels,
+                        num_heads=self.hparams.num_heads,
+                        edge_dim=self.hparams.edge_dim,
                         add_self_loops=False,
                     )
-                    for rel in [
-                        ("place", "to", "transition"),
-                        ("transition", "to", "place"),
-                    ]
+                    for rel in [("place", "to", "transition"), ("transition", "to", "place")]
                 },
                 aggr="sum",
             )
             self.convs.append(conv)
+            # Update in_channels for the next layer
+            in_channels = {key: layer_output_dim for key in in_channels.keys()}
 
-        self.lin = torch.nn.ModuleDict(
-            {
-                "place": Linear(hidden_channels * num_heads, out_channels),
-                "transition": Linear(hidden_channels * num_heads, out_channels),
-            }
-        )
-
-    def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
-        x_dict = batch.x_dict
-        edge_index_dict = batch.edge_index_dict
-        edge_attr_dict = batch.edge_attr_dict
-
-        for conv in self.convs:
-            x_dict = conv(x_dict, edge_index_dict, edge_attr_dict=edge_attr_dict)
-            x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
-
-        # *** BUG FIX APPLIED HERE ***
-        output_dict = {node_type: self.linnode_type for node_type, x in x_dict.items()}
-
-        return output_dict
+        # Define the final linear layers with the correct input dimension
+        self.lin = ModuleDict({nt: Linear(layer_output_dim, self.hparams.out_channels) for nt in self.node_types})
 
 
-class HEAT_SPN_Model(LightningSPNModule):
+class HEAT_SPN_Model(BaseHeteroGNN):
     """
     An SPN evaluation model using Heterogeneous Edge-based Attention Transformer (HEAT) layers.
     """
 
     def __init__(
-        self,
-        hidden_channels: int,
-        out_channels: int,
-        num_heads: int,
-        num_layers: int,
-        edge_dim: int,
-        learning_rate: float = 1e-3,
-        weight_decay: float = 1e-5,
+        self, in_channels_dict: Dict[str, int], hidden_channels: int, out_channels: int, num_layers: int, **kwargs
     ):
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(**kwargs)
         self.save_hyperparameters()
+        self._create_conv_layers()
 
-        self.convs = torch.nn.ModuleList()
-        for i in range(num_layers):
-            in_c = -1 if i == 0 else hidden_channels
+    def _create_conv_layers(self) -> None:
+        in_channels = self.hparams.in_channels_dict
+        # The output dimension of a HEAT layer is just hidden_channels
+        layer_output_dim = self.hparams.hidden_channels
+
+        for i in range(self.hparams.num_layers):
             conv = HeteroConv(
                 {
                     rel: HEATConv(
-                        in_channels=in_c,
-                        out_channels=hidden_channels,
-                        num_heads=num_heads,
-                        edge_dim=edge_dim,
+                        in_channels=(in_channels[rel[0]], in_channels[rel[2]]),
+                        out_channels=self.hparams.hidden_channels,
+                        num_heads=self.hparams.num_heads,
+                        edge_dim=self.hparams.edge_dim,
+                        num_node_types=self.hparams.num_node_types,
+                        num_edge_types=self.hparams.num_edge_types,
+                        node_type_emb_dim=self.hparams.node_type_emb_dim,
+                        edge_type_emb_dim=self.hparams.edge_type_emb_dim,
                     )
-                    for rel in [
-                        ("place", "to", "transition"),
-                        ("transition", "to", "place"),
-                    ]
+                    for rel in [("place", "to", "transition"), ("transition", "to", "place")]
                 },
                 aggr="sum",
             )
             self.convs.append(conv)
+            # Update in_channels for the next layer
+            in_channels = {key: layer_output_dim for key in in_channels.keys()}
 
-        self.lin = torch.nn.ModuleDict(
-            {
-                "place": Linear(hidden_channels, out_channels),
-                "transition": Linear(hidden_channels, out_channels),
-            }
-        )
-
-    def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
-        x_dict = batch.x_dict
-        edge_index_dict = batch.edge_index_dict
-        edge_attr_dict = batch.edge_attr_dict
-        node_type_dict = batch.node_type_dict
-
-        for conv in self.convs:
-            x_dict = conv(
-                x_dict,
-                edge_index_dict,
-                edge_attr_dict=edge_attr_dict,
-                node_type_dict=node_type_dict,
-            )
-            x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
-
-        output_dict = {node_type: self.linnode_type for node_type, x in x_dict.items()}
-
-        return output_dict
+        # Define the final linear layers with the correct input dimension
+        self.lin = ModuleDict({nt: Linear(layer_output_dim, self.hparams.out_channels) for nt in self.node_types})

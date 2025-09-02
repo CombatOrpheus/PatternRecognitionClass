@@ -181,12 +181,12 @@ def get_test_args():
         help="Path to the main experiment log directory (e.g., lightning_logs/my_experiment).",
     )
     parser.add_argument(
-        "--data_dir", type=Path, default=Path("./Data"), help="Directory containing the .processed test files."
+        "--data_dir", type=Path, default=Path("../Data"), help="Directory containing the .processed test files."
     )
     parser.add_argument(
         "--output_file",
         type=Path,
-        default=Path("results/cross_dataset_evaluation.parquet"),
+        default=Path("../results/cross_dataset_evaluation.parquet"),
         help="Path to the output Parquet file for the results.",
     )
     return parser.parse_args()

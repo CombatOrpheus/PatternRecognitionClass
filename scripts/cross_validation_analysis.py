@@ -17,7 +17,8 @@ ALL_TEST_METRICS = [
     "test_mape",
 ]
 
-def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metric: str = 'test_mae'):
+
+def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metric: str = "test_mae"):
     """
     Loads cross-evaluation results, analyzes model generalization across different
     datasets, and generates summary tables and a performance heatmap.
@@ -38,10 +39,7 @@ def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metri
 
     # 1. Create a pivot table for the heatmap for the specified metric
     performance_pivot = df.pivot_table(
-        index='gnn_operator',
-        columns='cross_eval_dataset',
-        values=metric,
-        aggfunc='mean'
+        index="gnn_operator", columns="cross_eval_dataset", values=metric, aggfunc="mean"
     )
 
     # 2. Generate and save the performance heatmap
@@ -52,42 +50,42 @@ def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metri
         annot=True,
         fmt=".4f",
         cmap="viridis_r",
-        linewidths=.5,
-        cbar_kws={'label': f'Mean {metric.replace("_", " ").title()}'}
+        linewidths=0.5,
+        cbar_kws={"label": f'Mean {metric.replace("_", " ").title()}'},
     )
     plt.title(f'Model Performance ({metric.replace("_", " ").title()}) Across Datasets')
-    plt.xlabel('Test Dataset')
-    plt.ylabel('GNN Operator')
-    plt.xticks(rotation=45, ha='right')
+    plt.xlabel("Test Dataset")
+    plt.ylabel("GNN Operator")
+    plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0)
     plt.tight_layout()
     heatmap_path_svg = output_dir / f"cross_eval_heatmap_{metric}.svg"
-    plt.savefig(heatmap_path_svg, format='svg', bbox_inches='tight')
+    plt.savefig(heatmap_path_svg, format="svg", bbox_inches="tight")
     plt.close()
     print(f"Performance heatmap saved to: {heatmap_path_svg}")
 
     # 3. Generate and save summary statistics for the specified metric
     print(f"\n--- Generating summary statistics for '{metric}' ---")
-    model_robustness = performance_pivot.std(axis=1).rename('robustness_std')
+    model_robustness = performance_pivot.std(axis=1).rename("robustness_std")
 
-    summary_by_model = df.groupby('gnn_operator')[metric].agg(['mean', 'std']).reset_index()
-    summary_by_model = summary_by_model.merge(model_robustness, on='gnn_operator')
+    summary_by_model = df.groupby("gnn_operator")[metric].agg(["mean", "std"]).reset_index()
+    summary_by_model = summary_by_model.merge(model_robustness, on="gnn_operator")
 
     summary_by_model_path = output_dir / f"summary_by_model_{metric}.csv"
-    summary_by_model.to_csv(summary_by_model_path, index=False, float_format='%.4f')
+    summary_by_model.to_csv(summary_by_model_path, index=False, float_format="%.4f")
     print("\nAverage performance and robustness by model (across all datasets):")
     print(summary_by_model)
 
-    summary_by_dataset = df.groupby('cross_eval_dataset')[metric].agg(['mean', 'std']).reset_index()
+    summary_by_dataset = df.groupby("cross_eval_dataset")[metric].agg(["mean", "std"]).reset_index()
     summary_by_dataset_path = output_dir / f"summary_by_dataset_{metric}.csv"
-    summary_by_dataset.to_csv(summary_by_dataset_path, index=False, float_format='%.4f')
+    summary_by_dataset.to_csv(summary_by_dataset_path, index=False, float_format="%.4f")
     print("\nAverage difficulty by dataset (across all models):")
     print(summary_by_dataset)
 
     # 4. Statistical Test for Generalization
     print(f"\n--- Performing Friedman test on model ranks across datasets for '{metric}' ---")
-    df['rank'] = df.groupby(['run_id', 'cross_eval_dataset'])[metric].rank()
-    rank_pivot = df.pivot_table(index=['run_id', 'cross_eval_dataset'], columns='gnn_operator', values='rank')
+    df["rank"] = df.groupby(["run_id", "cross_eval_dataset"])[metric].rank()
+    rank_pivot = df.pivot_table(index=["run_id", "cross_eval_dataset"], columns="gnn_operator", values="rank")
 
     model_rank_groups = [rank_pivot[col].dropna().values for col in rank_pivot.columns]
 
@@ -96,27 +94,32 @@ def analyze_cross_evaluation_results(results_file: Path, output_dir: Path, metri
             friedman_stat, p_value = ss.friedmanchisquare(*model_rank_groups)
             print(f"Friedman Test on Ranks: statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
             if p_value < 0.05:
-                print("Result is significant (p < 0.05): There is a statistically significant difference in model generalization performance.")
+                print(
+                    "Result is significant (p < 0.05): There is a statistically significant difference in model generalization performance."
+                )
             else:
-                print("Result is not significant (p >= 0.05): There is no statistically significant difference in model generalization.")
+                print(
+                    "Result is not significant (p >= 0.05): There is no statistically significant difference in model generalization."
+                )
         except ValueError as e:
             print(f"Could not perform Friedman test. Reason: {e}")
 
     # 5. Performance Stability Visualization
     print(f"\n--- Generating performance stability plots for '{metric}' ---")
-    num_datasets = df['cross_eval_dataset'].nunique()
+    num_datasets = df["cross_eval_dataset"].nunique()
     g = sns.FacetGrid(df, col="cross_eval_dataset", col_wrap=min(4, num_datasets), sharey=True, height=4)
-    g.map_dataframe(sns.boxplot, x='gnn_operator', y=metric)
-    g.fig.suptitle(f'Model Performance Stability Across Datasets ({metric})', y=1.03)
+    g.map_dataframe(sns.boxplot, x="gnn_operator", y=metric)
+    g.fig.suptitle(f"Model Performance Stability Across Datasets ({metric})", y=1.03)
     g.set_axis_labels("GNN Operator", metric.replace("_", " ").title())
-    g.set_xticklabels(rotation=45, ha='right')
+    g.set_xticklabels(rotation=45, ha="right")
     g.tight_layout()
     stability_plot_path_svg = output_dir / f"cross_eval_stability_boxplots_{metric}.svg"
-    plt.savefig(stability_plot_path_svg, format='svg')
+    plt.savefig(stability_plot_path_svg, format="svg")
     plt.close()
     print(f"Stability boxplots saved to: {stability_plot_path_svg}")
 
     print(f"\n--- Cross-evaluation analysis for '{metric}' complete. ---")
+
 
 def get_analysis_args():
     """Parses command-line arguments for the analysis script."""

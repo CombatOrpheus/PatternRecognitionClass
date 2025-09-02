@@ -19,6 +19,7 @@ ALL_TEST_METRICS = [
     "test_mape",
 ]
 
+
 def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_mae"):
     """
     Loads experimental results from a Parquet file, performs statistical analysis,
@@ -113,7 +114,9 @@ def analyze_results(results_file: Path, output_dir: Path, metric: str = "test_ma
     print(f"Wilcoxon p-value table saved to: {wilcoxon_table_path}")
 
     # Post-hoc Conover test
-    posthoc_results = sp.posthoc_conover_friedman(df, melted=True, y_col=metric, group_col="gnn_operator", block_col="run_id", block_id_col="run_id")
+    posthoc_results = sp.posthoc_conover_friedman(
+        df, melted=True, y_col=metric, group_col="gnn_operator", block_col="run_id", block_id_col="run_id"
+    )
 
     # 3. Generate and save plots for the SPECIFIED metric
     print(f"\n--- Generating and saving plots for '{metric}' ---")
@@ -162,7 +165,7 @@ def get_analysis_args():
     parser.add_argument(
         "--output_dir",
         type=Path,
-        default=Path("results/analysis"),
+        default=Path("../results/analysis"),
         help="Directory to save the generated tables and plots.",
     )
     parser.add_argument(

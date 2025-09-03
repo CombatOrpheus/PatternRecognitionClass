@@ -167,17 +167,26 @@ def run_single_training_run(args: argparse.Namespace, run_id: int, train_data, v
         logger=logger,
         callbacks=[checkpoint_callback, EarlyStopping(monitor="val/loss", patience=args.patience)],
         deterministic=True,
-        enable_progress_bar=True,
+        enable_progress_bar=False,
         log_every_n_steps=1,
         enable_model_summary=False,
     )
     trainer.fit(model, datamodule=data_module)
+
+    final_train_loss = trainer.callback_metrics.get("train/loss_epoch", -1.0)
+    final_val_loss = trainer.callback_metrics.get("val/loss", -1.0)
+
     best_model_path = trainer.checkpoint_callback.best_model_path
     if not best_model_path:
         raise FileNotFoundError("Could not find the best model checkpoint.")
     test_results = trainer.test(ckpt_path=best_model_path, datamodule=data_module, verbose=False)
+
     results_with_id = test_results[0]
     results_with_id["run_id"], results_with_id["seed"] = run_id, seed
+    # Add the captured loss values to the results dictionary
+    results_with_id["final_train_loss"] = float(final_train_loss)
+    results_with_id["final_val_loss"] = float(final_val_loss)
+
     return best_model_path, results_with_id
 
 
@@ -200,7 +209,6 @@ def perform_cross_evaluation(
 
     all_eval_results = []
     for i, model_path in enumerate(tqdm(best_model_paths, desc="Cross-Evaluating Checkpoints")):
-        # **BUG FIX**: Correctly load model from checkpoint
         hparams = hparams_list[i]
         model_class = setup_model(argparse.Namespace(**hparams), node_features_dim).__class__
         model = model_class.load_from_checkpoint(model_path)
@@ -270,16 +278,16 @@ def main():
             for i in tqdm(range(run_args.num_runs), desc=f"Training {run_args.gnn_operator}"):
                 best_model_path, stats_result = run_single_training_run(run_args, i, train_data, val_data, test_data)
 
-                hparams_to_save = {
-                    "gnn_operator": run_args.gnn_operator,
-                    "prediction_level": run_args.prediction_level,
-                    "learning_rate": run_args.learning_rate,
-                    "hidden_dim": run_args.hidden_dim,
-                    "total_parameters": total_params,
-                    "trainable_parameters": trainable_params,
-                    "run_id": i,
-                    "seed": BASE_SEED + i,
-                }
+                hparams_to_save = vars(run_args).copy()
+                hparams_to_save.update(
+                    {
+                        "run_id": i,
+                        "seed": BASE_SEED + i,
+                        "total_parameters": total_params,
+                        "trainable_parameters": trainable_params,
+                    }
+                )
+
                 stats_result.update(hparams_to_save)
                 all_stats_results.append(stats_result)
                 all_best_model_paths.append(best_model_path)
@@ -301,6 +309,12 @@ def main():
             )
 
         # --- Final aggregation and saving of results ---
+        for result_list in [all_stats_results, all_cross_eval_results]:
+            for r in result_list:
+                for k, v in r.items():
+                    if isinstance(v, Path):
+                        r[k] = str(v)
+
         if all_stats_results:
             base_args.stats_results_file.parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(all_stats_results).to_parquet(base_args.stats_results_file, index=False)

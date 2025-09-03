@@ -53,7 +53,7 @@ class BaseGNN_SPN_Model(pl.LightningModule):
                     "rmse": MeanSquaredError(squared=False),
                     "rse": RelativeSquaredError(),
                     "rrse": RelativeSquaredError(squared=False),
-                    "r2": R2Score(),
+                    "r2": R2Score(multioutput="variance_weighted"),
                     "mape": MeanAbsolutePercentageError(),
                 }
             )

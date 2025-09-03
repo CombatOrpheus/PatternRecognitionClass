@@ -1,219 +1,109 @@
 """
-This module defines the SPNDataModule, a PyTorch Lightning DataModule for
-handling and preparing Stochastic Petri Net (SPN) data for GNN models.
-
-This enhanced version includes:
-- Support for both homogeneous (Data) and heterogeneous (HeteroData) graph formats.
-- Automatic normalization of regression labels for improved training stability.
-- Logic to correctly handle both graph-level and node-level prediction tasks.
+**REFACTORED**: This module defines the SPNDataModule, which now uses the
+persistent InMemoryDataset classes and correctly handles validation set creation.
 """
 
-from typing import Optional, List, Callable, Union
+from typing import Optional
 
 import lightning.pytorch as pl
-import numpy as np
 import torch
 from sklearn.preprocessing import StandardScaler
-from torch import from_numpy
-from torch_geometric.data import Data, HeteroData
+from torch.utils.data import random_split, Subset
 from torch_geometric.loader import DataLoader
-from tqdm import tqdm
 
-from src.PetriNets import SPNData, SPNAnalysisResultLabel
+from src.PetriNets import SPNAnalysisResultLabel
+from src.SPNDatasets import HomogeneousSPNDataset, HeterogeneousSPNDataset
 
 
 class SPNDataModule(pl.LightningDataModule):
     """
-    A LightningDataModule for creating training, validation, and test datasets
-    for Stochastic Petri Nets from pre-split data sources.
+    A LightningDataModule that uses pre-processed, on-disk datasets for SPNs.
     """
 
     def __init__(
         self,
+        root: str,
+        raw_data_dir: str,
+        train_file: str,
+        test_file: str,
         label_to_predict: SPNAnalysisResultLabel,
-        train_data_list: List[SPNData],
-        val_data_list: Optional[List[SPNData]] = None,
-        test_data_list: Optional[List[SPNData]] = None,
+        val_file: Optional[str] = None,  # **BUG FIX**: Made optional
+        heterogeneous: bool = False,
         batch_size: int = 32,
         num_workers: int = 0,
-        transform: Optional[Callable] = None,
-        heterogeneous: bool = False,
+        val_split: float = 0.2,
     ):
-        """
-        Args:
-            label_to_predict (SPNAnalysisResultLabel): The analysis result to use as the label.
-            train_data_list (List[SPNData]): Raw SPNData objects for training.
-            val_data_list (Optional[List[SPNData]]): Optional list for validation.
-            test_data_list (Optional[List[SPNData]]): Optional list for testing.
-            batch_size (int): Batch size for the DataLoaders.
-            num_workers (int): Number of subprocesses for data loading.
-            transform (Optional[Callable]): A function/transform to apply to each Data object.
-            heterogeneous (bool): If True, creates HeteroData objects for heterogeneous GNNs.
-                                  If False, creates standard Data objects.
-        """
         super().__init__()
-        self.save_hyperparameters(ignore=["train_data_list", "val_data_list", "test_data_list"])
-
-        self.train_raw = train_data_list
-        self.val_raw = val_data_list
-        self.test_raw = test_data_list
-
-        self.train_data: Optional[List[Union[Data, HeteroData]]] = None
-        self.val_data: Optional[List[Union[Data, HeteroData]]] = None
-        self.test_data: Optional[List[Union[Data, HeteroData]]] = None
-
-        self.transform = transform
+        self.save_hyperparameters()
+        self.train_dataset: Optional[Subset] = None
+        self.val_dataset: Optional[Subset] = None
+        self.test_dataset: Optional[Subset] = None
         self.label_scaler: Optional[StandardScaler] = None
 
-    def _process_list(self, raw_data_list: List[SPNData], desc: Optional[str] = None) -> List[Union[Data, HeteroData]]:
-        """Converts a list of raw SPNData objects to PyG Data or HeteroData objects."""
-        processed_data = []
-        is_node_level_task = self.hparams.label_to_predict == "average_tokens_per_place"
+    def setup(self, stage: Optional[str] = None):
+        """Loads datasets and performs train/val/test splits."""
+        dataset_class = HeterogeneousSPNDataset if self.hparams.heterogeneous else HomogeneousSPNDataset
 
-        for net in tqdm(raw_data_list, leave=False, desc=desc):
-            label_raw = net.get_analysis_result(self.hparams.label_to_predict)
-            if not isinstance(label_raw, np.ndarray):
-                label_raw = np.array([label_raw])
-
-            if self.label_scaler:
-                label_scaled = self.label_scaler.transform(label_raw.reshape(-1, 1))
+        if stage == "fit" or stage is None:
+            # **BUG FIX**: Handle both provided val_file and automatic splitting
+            if self.hparams.val_file is None:
+                # Create validation set from a split of the training data
+                full_train_dataset = dataset_class(
+                    self.hparams.root, self.hparams.raw_data_dir, self.hparams.train_file, self.hparams.label_to_predict
+                )
+                train_size = int(len(full_train_dataset) * (1 - self.hparams.val_split))
+                val_size = len(full_train_dataset) - train_size
+                self.train_dataset, self.val_dataset = random_split(full_train_dataset, [train_size, val_size])
             else:
-                label_scaled = label_raw
-
-            label_tensor = from_numpy(label_scaled).float().flatten()
-
-            if self.hparams.heterogeneous:
-                data = net.to_hetero_information()
-                if is_node_level_task:
-                    # For node-level tasks, attach the label to the 'place' nodes
-                    data['place'].y = label_tensor
-                else:
-                    # For graph-level tasks, store it in a way the hetero model can access
-                    data.y_dict = {'graph': label_tensor}
-            else: # Homogeneous processing
-                node_features, edge_features, edge_pairs = net.to_information()
-                data = Data(
-                    x=from_numpy(node_features).float(),
-                    edge_attr=from_numpy(edge_features).float(),
-                    edge_index=from_numpy(edge_pairs).long(),
-                    y=label_tensor,
+                # Use separate files for training and validation
+                self.train_dataset = dataset_class(
+                    self.hparams.root, self.hparams.raw_data_dir, self.hparams.train_file, self.hparams.label_to_predict
+                )
+                self.val_dataset = dataset_class(
+                    self.hparams.root, self.hparams.raw_data_dir, self.hparams.val_file, self.hparams.label_to_predict
                 )
 
-            if self.transform:
-                data = self.transform(data)
+            # Fit scaler ONLY on the training split
+            print("Fitting label scaler...")
+            if self.hparams.heterogeneous:
+                labels = torch.cat([data["place"].y for data in self.train_dataset]).numpy().reshape(-1, 1)
+            else:
+                labels = torch.cat([data.y for data in self.train_dataset]).numpy().reshape(-1, 1)
+            self.label_scaler = StandardScaler().fit(labels)
 
-            processed_data.append(data)
-        return processed_data
+            # Apply scaling in-place
+            self._scale_dataset(self.train_dataset)
+            self._scale_dataset(self.val_dataset)
 
-    def setup(self, stage: Optional[str] = None):
-        """
-        Prepares data. This method fits the label scaler, then processes the datasets.
-        """
-        if (stage == "fit" or stage is None) and self.train_raw and self.label_scaler is None:
-            print("Fitting label scaler on training data...")
-            labels_to_fit = []
-            for net in self.train_raw:
-                label = net.get_analysis_result(self.hparams.label_to_predict)
-                if isinstance(label, np.ndarray):
-                    labels_to_fit.extend(label.flatten())
-                else:
-                    labels_to_fit.append(label)
+        if stage == "test" or stage is None:
+            self.test_dataset = dataset_class(
+                self.hparams.root, self.hparams.raw_data_dir, self.hparams.test_file, self.hparams.label_to_predict
+            )
+            if self.label_scaler:
+                self._scale_dataset(self.test_dataset)
 
-            train_labels = np.array(labels_to_fit).reshape(-1, 1)
-            self.label_scaler = StandardScaler()
-            self.label_scaler.fit(train_labels)
-
-        if (stage == "fit" or stage is None) and self.train_raw:
-            self.train_data = self._process_list(self.train_raw, "Processing training data...")
-            if self.val_raw:
-                self.val_data = self._process_list(self.val_raw, "Processing validation data...")
-
-        if (stage == "test" or stage is None) and self.test_raw:
-            self.test_data = self._process_list(self.test_raw, "Processing test data...")
-
-    @property
-    def num_node_features(self) -> int:
-        """Returns the number of node features, assuming they are consistent across node types."""
-        if not self.train_data:
-            raise RuntimeError("Data has not been prepared. Call setup() first.")
-
-        sample = self.train_data[0]
-        if self.hparams.heterogeneous:
-            # Pick the first node type from the dictionary to get the feature count
-            first_node_type = next(iter(sample.x_dict))
-            return sample[first_node_type].num_features
-        else:
-            return sample.num_node_features
-
-    @property
-    def num_edge_features(self) -> int:
-        """Returns the number of edge features, assuming they are consistent across edge types."""
-        if not self.train_data:
-            raise RuntimeError("Data has not been prepared. Call setup() first.")
-
-        sample = self.train_data[0]
-        if self.hparams.heterogeneous:
-            # Check if there are any edge types with attributes
-            for edge_type in sample.edge_types:
-                if "edge_attr" in sample[edge_type]:
-                    return sample[edge_type].num_features
-            return 0  # No edge features found
-        else:
-            return sample.num_edge_features
-
-    @property
-    def num_node_types(self) -> int:
-        """Returns the number of node types (for heterogeneous graphs)."""
-        if not self.hparams.heterogeneous:
-            return 0
-        if not self.train_data:
-            raise RuntimeError("Data has not been prepared. Call setup() first.")
-        return len(self.train_data[0].node_types)
-
-    @property
-    def num_edge_types(self) -> int:
-        """Returns the number of edge types (for heterogeneous graphs)."""
-        if not self.hparams.heterogeneous:
-            return 0
-        if not self.train_data:
-            raise RuntimeError("Data has not been prepared. Call setup() first.")
-        return len(self.train_data[0].edge_types)
-
-    def inverse_transform_label(self, y_tensor: torch.Tensor) -> np.ndarray:
-        """
-        Converts a tensor of normalized model predictions back to their
-        original scale.
-        """
-        if self.label_scaler is None:
-            raise RuntimeError("Label scaler has not been fitted. Run setup('fit') first.")
-        y_reshaped = y_tensor.cpu().detach().numpy().reshape(-1, 1)
-        return self.label_scaler.inverse_transform(y_reshaped)
+    def _scale_dataset(self, dataset: Subset):
+        """Applies the fitted scaler to the labels of a dataset."""
+        for i in range(len(dataset)):
+            data = dataset[i]
+            if self.hparams.heterogeneous:
+                y = data["place"].y.numpy().reshape(-1, 1)
+                data["place"].y = torch.from_numpy(self.label_scaler.transform(y)).float().flatten()
+            else:
+                y = data.y.numpy().reshape(-1, 1)
+                data.y = torch.from_numpy(self.label_scaler.transform(y)).float().flatten()
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
-            self.train_data,
+            self.train_dataset,
             batch_size=self.hparams.batch_size,
             shuffle=True,
             num_workers=self.hparams.num_workers,
             drop_last=True,
         )
 
-    def val_dataloader(self) -> Optional[DataLoader]:
-        if not self.val_data:
-            return None
-        return DataLoader(
-            self.val_data,
-            batch_size=self.hparams.batch_size,
-            shuffle=False,
-            num_workers=self.hparams.num_workers,
-        )
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(self.val_dataset, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
 
-    def test_dataloader(self) -> Optional[DataLoader]:
-        if not self.test_data:
-            return None
-        return DataLoader(
-            self.test_data,
-            batch_size=self.hparams.batch_size,
-            shuffle=False,
-            num_workers=self.hparams.num_workers,
-        )
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(self.test_dataset, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)

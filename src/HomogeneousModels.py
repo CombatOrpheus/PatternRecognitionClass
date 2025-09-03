@@ -2,9 +2,8 @@
 This module provides a flexible and modular PyTorch Lightning implementation of
 homogeneous Graph Neural Networks for evaluating Stochastic Petri Nets (SPNs).
 
-It features a base class for common logic and two specialized models for
-graph-level and node-level regression tasks, each supporting multiple GNN
-operator types (GCN, ChebConv, TAGConv, SGC, SSG).
+This refactored version uses MetricCollection for cleaner metric handling and
+the official torch_geometric.nn.models.MLP for the readout head.
 """
 
 from typing import Dict, Any, Literal
@@ -12,6 +11,7 @@ from typing import Dict, Any, Literal
 import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
+from torch.nn import Sequential, Linear, ReLU
 from torch_geometric.data import Data
 from torch_geometric.nn import (
     GCNConv,
@@ -19,10 +19,12 @@ from torch_geometric.nn import (
     TAGConv,
     SGConv,
     SSGConv,
+    GATConv,  # **NEW**: Import for GATConv
+    GINConv,  # **NEW**: Import for GINConv
     global_add_pool,
 )
 from torch_geometric.nn.models import MLP
-from torchmetrics import MetricCollection, RelativeSquaredError
+from torchmetrics import MetricCollection
 from torchmetrics.regression import (
     MeanAbsoluteError,
     MeanSquaredError,
@@ -51,9 +53,7 @@ class BaseGNN_SPN_Model(pl.LightningModule):
                     "mae": MeanAbsoluteError(),
                     "mse": MeanSquaredError(),
                     "rmse": MeanSquaredError(squared=False),
-                    "rse": RelativeSquaredError(),
-                    "rrse": RelativeSquaredError(squared=False),
-                    "r2": R2Score(multioutput="variance_weighted"),
+                    "r2": R2Score(),
                     "mape": MeanAbsolutePercentageError(),
                 }
             )
@@ -225,6 +225,84 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
 
         if y_pred.shape != y_true.shape:
             raise ValueError(f"Final shape mismatch: y_pred={y_pred.shape}, y_true={y_true.shape}")
+
+        loss = F.mse_loss(y_pred, y_true)
+        self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch.num_graphs)
+
+        metrics = getattr(self, f"{prefix}_metrics")
+        metrics.update(y_pred, y_true)
+        self.log_dict(metrics, on_step=False, on_epoch=True)
+
+        return loss
+
+
+class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
+    """
+    A GNN model with a predefined sequence of different GNN layers
+    (GAT -> GCN -> GIN) for graph-level prediction.
+    """
+
+    def __init__(
+        self,
+        node_features_dim: int,
+        hidden_dim: int,
+        out_channels: int,
+        num_layers_mlp: int = 2,
+        heads: int = 4,  # Heads for the GAT layer
+        learning_rate: float = 1e-3,
+        weight_decay: float = 1e-5,
+    ):
+        super().__init__(learning_rate, weight_decay)
+        self.save_hyperparameters()
+
+        # Layer 1: GATConv
+        self.conv1 = GATConv(node_features_dim, hidden_dim, heads=heads, dropout=0.6)
+
+        # Layer 2: GCNConv
+        # Input dimension must match the output of the GAT layer (hidden_dim * heads)
+        self.conv2 = GCNConv(hidden_dim * heads, hidden_dim)
+
+        # Layer 3: GINConv
+        # GINConv requires a simple MLP for its transformations
+        gin_mlp = Sequential(
+            Linear(hidden_dim, hidden_dim * 2),
+            ReLU(),
+            Linear(hidden_dim * 2, hidden_dim),
+        )
+        self.conv3 = GINConv(gin_mlp)
+
+        # Final MLP readout head
+        self.output_mlp = MLP(
+            in_channels=hidden_dim,
+            hidden_channels=hidden_dim,
+            out_channels=out_channels,
+            num_layers=num_layers_mlp,
+            act="relu",
+        )
+
+    def forward(self, batch: Data) -> torch.Tensor:
+        x, edge_index, batch_map = batch.x, batch.edge_index, batch.batch
+
+        # Apply layers sequentially with activations
+        x = F.dropout(x, p=0.6, training=self.training)
+        x = F.elu(self.conv1(x, edge_index))
+        x = F.dropout(x, p=0.6, training=self.training)
+        x = F.leaky_relu(self.conv2(x, edge_index))
+        x = F.leaky_relu(self.conv3(x, edge_index))
+
+        # Global pooling and final prediction
+        embedding = global_add_pool(x, batch_map)
+        prediction = self.output_mlp(embedding)
+
+        return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
+
+    def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
+        """Identical to GraphGNN_SPN_Model's common step."""
+        y_pred = self(batch)
+        y_true = batch.y.float()
+
+        if y_pred.shape != y_true.shape:
+            raise ValueError(f"Shape mismatch: y_pred={y_pred.shape}, y_true={y_true.shape}")
 
         loss = F.mse_loss(y_pred, y_true)
         self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch.num_graphs)

@@ -1,6 +1,7 @@
 import argparse
+import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 
 import lightning.pytorch as pl
 import optuna
@@ -9,8 +10,9 @@ import torch
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from tqdm import tqdm
 
-from src.HomogeneousModels import BaseGNN_SPN_Model, NodeGNN_SPN_Model, GraphGNN_SPN_Model, MixedGNN_SPN_Model
+from src.HomogeneousModels import BaseGNN_SPN_Model, GraphGNN_SPN_Model, MixedGNN_SPN_Model, NodeGNN_SPN_Model
 from src.SPNDataModule import SPNDataModule
+from src.SPNDatasets import HomogeneousSPNDataset
 
 # Base seed for ensuring reproducibility of statistical runs
 BASE_SEED = 42
@@ -48,12 +50,9 @@ def get_args() -> argparse.Namespace:
         "--studies_dir", type=Path, default=Path("optuna_studies"), help="Directory containing Optuna study .db files."
     )
     parser.add_argument(
-        "--cross_eval_dir", type=Path, default=Path("./Data"), help="Directory of datasets for cross-evaluation."
+        "--state_dict_dir", type=Path, default=Path("results/state_dicts"), help="Directory to save model artifacts."
     )
     parser.add_argument("--stats_results_file", type=Path, default=Path("results/statistical_results.parquet"))
-    parser.add_argument(
-        "--cross_eval_results_file", type=Path, default=Path("results/cross_dataset_evaluation.parquet")
-    )
     parser.add_argument("--log_dir", type=Path, default="lightning_logs")
     parser.add_argument("--exp_name", type=str, default="gnn_spn_experiment")
 
@@ -102,14 +101,11 @@ def setup_model(args: argparse.Namespace, node_features_dim: int) -> BaseGNN_SPN
     model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
     model_class = model_classes.get(args.gnn_operator if args.gnn_operator == "mixed" else args.prediction_level)
 
-    # Prepare model init args from the combined run_args namespace
     model_kwargs = vars(args).copy()
 
-    # Handle parameter name difference between optuna study and model constructor
     if "num_layers_gnn" in model_kwargs:
         model_kwargs["num_layers"] = model_kwargs.pop("num_layers_gnn")
 
-    # Filter kwargs to only those accepted by the model's constructor
     accepted_args = model_class.__init__.__code__.co_varnames
     filtered_kwargs = {k: v for k, v in model_kwargs.items() if k in accepted_args}
 
@@ -117,12 +113,11 @@ def setup_model(args: argparse.Namespace, node_features_dim: int) -> BaseGNN_SPN
 
 
 def run_single_training_run(args: argparse.Namespace, run_id: int, data_module: SPNDataModule) -> tuple[str, dict]:
-    """Trains one model instance and returns its checkpoint path and results."""
+    """Trains one model instance and returns its artifact path and test results."""
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
 
-    node_features_dim = data_module.train_dataset.dataset[0].num_node_features
-    model = setup_model(args, node_features_dim)
+    model = setup_model(args, data_module.num_node_features)
 
     logger = pl.loggers.TensorBoardLogger(
         save_dir=str(args.log_dir), name=args.exp_name, version=f"{args.gnn_operator}_run_{run_id}"
@@ -143,6 +138,20 @@ def run_single_training_run(args: argparse.Namespace, run_id: int, data_module: 
     if not best_model_path:
         raise FileNotFoundError("Best model checkpoint not found.")
 
+    # --- Save model artifacts (state_dict and hparams) ---
+    artifact_dir = args.state_dict_dir / args.exp_name / f"{args.gnn_operator}_run_{run_id}_seed_{seed}"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    state_dict_path = artifact_dir / "best_model.pt"
+    checkpoint = torch.load(best_model_path, map_location="cpu")
+    torch.save(checkpoint["state_dict"], state_dict_path)
+
+    hparams_path = artifact_dir / "hparams.json"
+    hparams_to_save = {k: v for k, v in vars(args).items() if isinstance(v, (str, int, float, bool))}
+    with open(hparams_path, "w") as f:
+        json.dump(hparams_to_save, f, indent=4)
+    # ---
+
     results = trainer.test(ckpt_path=best_model_path, datamodule=data_module, verbose=False)[0]
     results.update(
         {
@@ -152,55 +161,7 @@ def run_single_training_run(args: argparse.Namespace, run_id: int, data_module: 
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
-    return best_model_path, results
-
-
-def perform_cross_evaluation(
-    best_model_paths: List[str], hparams_list: List[Dict], cross_eval_dir: Path, node_features_dim: int
-) -> List[Dict]:
-    """Evaluates a list of trained models against a suite of test datasets, loading data only once."""
-    print(f"\n--- Starting Cross-Dataset Evaluation Phase ---")
-    test_files = sorted(list(cross_eval_dir.glob("*.processed")))
-    if not test_files:
-        return []
-
-    print("Pre-loading all cross-evaluation datasets into memory...")
-    cross_eval_data_cache = {file: load_spn_data_from_files(file) for file in test_files}
-    print(f"Loaded {len(cross_eval_data_cache)} datasets.")
-
-    all_eval_results = []
-    for i, model_path in enumerate(tqdm(best_model_paths, desc="Cross-Evaluating Checkpoints")):
-        hparams = hparams_list[i]
-        model_class = setup_model(argparse.Namespace(**hparams), node_features_dim).__class__
-        model = model_class.load_from_checkpoint(model_path)
-        model.eval()
-
-        for data_file, raw_test_data in cross_eval_data_cache.items():
-            if not raw_test_data:
-                continue
-
-            # Use a temporary DataModule for evaluation on this specific dataset
-            data_module = SPNDataModule(
-                root=hparams["root"],
-                raw_data_dir=hparams["raw_data_dir"],
-                train_file=data_file.name,
-                test_file=data_file.name,  # Use same file for dummy setup
-                label_to_predict=hparams["label"],
-                batch_size=hparams["batch_size"],
-                num_workers=hparams["num_workers"],
-            )
-            data_module.setup("test")  # Only setup the test set
-
-            trainer = pl.Trainer(accelerator="auto", logger=False, enable_progress_bar=False)
-            test_metrics = trainer.test(model, datamodule=data_module, verbose=False)
-
-            if test_metrics:
-                result_dict = test_metrics[0]
-                result_dict["cross_eval_dataset"] = data_file.name
-                result_dict.update(hparams)
-                all_eval_results.append(result_dict)
-
-    return all_eval_results
+    return str(artifact_dir), results
 
 
 def main():
@@ -211,10 +172,7 @@ def main():
         return
 
     all_stats_results = []
-    all_best_model_paths = []
-    all_hparams_for_eval = []
 
-    # --- PHASE 1: TRAINING ---
     for study_path in selected_studies:
         study_params = load_params_from_study(study_path)
         run_args = argparse.Namespace(**vars(base_args))
@@ -222,56 +180,41 @@ def main():
 
         print(f"\n--- Training Phase for operator: {run_args.gnn_operator} ---")
 
+        train_dataset = HomogeneousSPNDataset(run_args.root, run_args.raw_data_dir, run_args.train_file, run_args.label)
+        test_dataset = HomogeneousSPNDataset(run_args.root, run_args.raw_data_dir, run_args.test_file, run_args.label)
+
         data_module = SPNDataModule(
-            root=run_args.root,
-            raw_data_dir=run_args.raw_data_dir,
-            train_file=run_args.train_file,
-            test_file=run_args.test_file,
+            train_data_list=list(train_dataset),
+            test_data_list=list(test_dataset),
             label_to_predict=run_args.label,
             batch_size=run_args.batch_size,
             num_workers=run_args.num_workers,
         )
-        data_module.setup("fit")
+        data_module.setup()  # Setup both fit and test stages
 
-        node_features_dim = data_module.train_dataset.dataset[0].num_node_features
-        model_for_summary = setup_model(run_args, node_features_dim)
+        model_for_summary = setup_model(run_args, data_module.num_node_features)
         total_params = sum(p.numel() for p in model_for_summary.parameters())
         trainable_params = sum(p.numel() for p in model_for_summary.parameters() if p.requires_grad)
 
         for i in tqdm(range(run_args.num_runs), desc=f"Training {run_args.gnn_operator}"):
-            best_model_path, stats_result = run_single_training_run(run_args, i, data_module)
+            artifact_dir, stats_result = run_single_training_run(run_args, i, data_module)
 
             hparams_to_save = vars(run_args).copy()
             hparams_to_save.update({"total_parameters": total_params, "trainable_parameters": trainable_params})
 
             stats_result.update(hparams_to_save)
             all_stats_results.append(stats_result)
-            all_best_model_paths.append(best_model_path)
-            all_hparams_for_eval.append(hparams_to_save)
 
-    # --- PHASE 2: CROSS-EVALUATION ---
-    if all_best_model_paths:
-        datamodule_hparams = {"batch_size": 512, "num_workers": base_args.num_workers}
-        all_cross_eval_results = perform_cross_evaluation(
-            all_best_model_paths, all_hparams_for_eval, base_args.cross_eval_dir, node_features_dim
-        )
-
-    # --- Final saving ---
-    for result_list in [all_stats_results, all_cross_eval_results]:
-        for r in result_list:
+    # --- Final saving of statistical results ---
+    if all_stats_results:
+        for r in all_stats_results:
             for k, v in r.items():
                 if isinstance(v, Path):
                     r[k] = str(v)
 
-    if all_stats_results:
         base_args.stats_results_file.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(all_stats_results).to_parquet(base_args.stats_results_file, index=False)
         print(f"\nStatistical results saved to {base_args.stats_results_file}")
-
-    if all_cross_eval_results:
-        base_args.cross_eval_results_file.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(all_cross_eval_results).to_parquet(base_args.cross_eval_results_file, index=False)
-        print(f"Cross-evaluation results saved to {base_args.cross_eval_results_file}")
 
 
 if __name__ == "__main__":

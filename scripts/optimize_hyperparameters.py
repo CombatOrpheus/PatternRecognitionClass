@@ -13,6 +13,7 @@ from tqdm import tqdm
 from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model, MixedGNN_SPN_Model
 from src.PetriNets import SPNAnalysisResultLabel
 from src.SPNDataModule import SPNDataModule
+from src.SPNDatasets import HomogeneousSPNDataset
 
 pl.seed_everything(42, workers=True)
 
@@ -58,11 +59,12 @@ def get_args() -> argparse.Namespace:
     training_group.add_argument("--max_epochs", type=int, default=100)
     training_group.add_argument("--patience", type=int, default=10)
     training_group.add_argument("--num_workers", type=int, default=3)
+    training_group.add_argument("--val_split", type=float, default=0.2, help="Fraction of training data to use for validation.")
 
     return parser.parse_args()
 
 
-def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
+def objective(trial: optuna.Trial, args: argparse.Namespace, train_data: HomogeneousSPNDataset) -> float:
     """The Optuna objective function."""
     gnn_operator = args.gnn_operator
     hyperparams = {
@@ -83,32 +85,39 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         hyperparams["gnn_alpha"] = trial.suggest_float("gnn_alpha", 0.05, 0.5) if gnn_operator == "ssg" else 0.1
 
     data_module = SPNDataModule(
-        root=args.root,
-        raw_data_dir=args.raw_data_dir,
-        train_file=args.train_file,
-        test_file=args.train_file,  # Dummy
-        val_file=args.train_file,  # Dummy
+        train_data_list=list(train_data),  # Pass the pre-loaded data
         label_to_predict=args.label,
         batch_size=hyperparams["batch_size"],
         num_workers=args.num_workers,
+        val_split=args.val_split,
     )
-
-    model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
-    model_class = model_classes.get(gnn_operator if gnn_operator == "mixed" else args.prediction_level)
-
     data_module.setup("fit")
-    node_features_dim = data_module.train_dataset.dataset[0].num_node_features
 
     model_params = hyperparams.copy()
     model_params.pop("batch_size")
 
-    model = model_class(
-        node_features_dim=node_features_dim,
-        out_channels=1,
-        num_layers=model_params.pop("num_layers_gnn", 3),  # Default for mixed
-        gnn_operator_name=gnn_operator,
-        **model_params,
-    )
+    if gnn_operator == "mixed":
+        if args.prediction_level != "graph":
+            print("Warning: 'mixed' operator only supports 'graph' prediction level. Pruning trial.")
+            raise optuna.exceptions.TrialPruned()
+
+        # Parameters for MixedGNN_SPN_Model
+        model_params.pop("num_layers_gnn", None)
+        model_params.pop("gnn_k_hops", None)
+        model_params.pop("gnn_alpha", None)
+        model = MixedGNN_SPN_Model(node_features_dim=data_module.num_node_features, out_channels=1, **model_params)
+    else:
+        # Parameters for standard GNN models (GraphGNN or NodeGNN)
+        model_params.pop("heads", None)
+        model_params["num_layers"] = model_params.pop("num_layers_gnn")
+        model_params["gnn_operator_name"] = gnn_operator
+
+        model_class = {"graph": GraphGNN_SPN_Model, "node": NodeGNN_SPN_Model}[args.prediction_level]
+        model = model_class(
+            node_features_dim=data_module.num_node_features,
+            out_channels=1,
+            **model_params,
+        )
 
     logger = TensorBoardLogger(
         save_dir="optuna_logs", name=f"{args.study_name}_{gnn_operator}", version=f"trial_{trial.number}"
@@ -142,6 +151,15 @@ def main():
     args.storage_dir.mkdir(parents=True, exist_ok=True)
     operators_to_run = ["gcn", "tag", "cheb", "sgc", "ssg", "mixed"] if args.all else [args.gnn_operator]
 
+    print("--- Pre-loading and processing data ---")
+    train_dataset = HomogeneousSPNDataset(
+        root=args.root,
+        raw_data_dir=args.raw_data_dir,
+        raw_file_name=args.train_file,
+        label_to_predict=args.label,
+    )
+    print("Data loaded successfully.")
+
     for gnn_operator in tqdm(operators_to_run, desc="Total Optimization Progress"):
         run_args = argparse.Namespace(**vars(args))
         run_args.gnn_operator = gnn_operator
@@ -161,7 +179,7 @@ def main():
                 study.set_user_attr(key, value)
 
         study.optimize(
-            lambda trial: objective(trial, run_args),
+            lambda trial: objective(trial, run_args, train_dataset),
             n_trials=run_args.n_trials,
             timeout=run_args.timeout,
             show_progress_bar=False,
@@ -170,7 +188,6 @@ def main():
         print(f"\n--- Optimization Finished for operator '{run_args.gnn_operator}' ---")
         print("Best trial:")
         best_trial = study.best_trial
-        print(f"  Runtime (s): {study}")
         print(f"  Value (val/loss): {best_trial.value:.4f}")
         print("  Params: ")
         for key, value in best_trial.params.items():

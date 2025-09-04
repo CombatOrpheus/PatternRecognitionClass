@@ -3,11 +3,12 @@ This module defines custom PyTorch Geometric Dataset classes for handling
 the pre-processing and loading of SPN data.
 
 **MODIFIED**: This version creates unique processed filenames based on the
-raw input file to prevent data caching conflicts.
+raw input file to prevent data caching conflicts and adds properties to
+easily access dataset metadata like the number of features.
 """
 
 from pathlib import Path
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Dict, Union
 
 import numpy as np
 import torch
@@ -58,10 +59,23 @@ class BaseSPNDataset(InMemoryDataset):
     def process(self):
         raise NotImplementedError("Subclasses must implement the process method.")
 
+    @property
+    def num_node_features(self) -> Union[int, Dict[str, int]]:
+        """Returns the number of features per node type."""
+        if not hasattr(self, "_data") or self._data is None:
+            return 0
+        if self.data.is_hetero:
+            return {store._key: store.num_node_features for store in self.data.node_stores}
+        return self.data.num_node_features
 
-# --- HomogeneousSPNDataset, HeterogeneousSPNDataset, and ReachabilityGraphInMemoryDataset ---
-# The logic within these classes remains the same, as the filename fix is in the base class.
-# They are included here for completeness.
+    @property
+    def num_edge_features(self) -> Union[int, Dict[str, int]]:
+        """Returns the number of features per edge type."""
+        if not hasattr(self, "_data") or self._data is None:
+            return 0
+        if self.data.is_hetero:
+            return {store._key: store.num_edge_features for store in self.data.edge_stores}
+        return self.data.num_edge_features
 
 
 class HomogeneousSPNDataset(BaseSPNDataset):
@@ -98,6 +112,7 @@ class HeterogeneousSPNDataset(BaseSPNDataset):
             if self.label_to_predict == "average_tokens_per_place":
                 data["place"].y = torch.tensor(label).float()
             else:
+                # For graph-level labels
                 data.y = torch.tensor([label]).float()
             data_list.append(data)
         if self.pre_transform is not None:

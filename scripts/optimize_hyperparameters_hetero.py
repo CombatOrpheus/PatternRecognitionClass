@@ -17,53 +17,13 @@ from tqdm import tqdm
 from src.HeterogeneousModels import RGAT_SPN_Model, HEAT_SPN_Model
 from src.PetriNets import load_spn_data_from_files, SPNAnalysisResultLabel
 from src.SPNDataModule import SPNDataModule
+from src.config_utils import load_config
 
 # Set a seed for reproducibility of data splits
 pl.seed_everything(42, workers=True)
 
 
-def get_args():
-    """Parses command-line arguments for the optimization."""
-    parser = argparse.ArgumentParser(description="Optimize Heterogeneous GNN model hyperparameters using Optuna.")
-
-    data_group = parser.add_argument_group("Paths and Data")
-    data_group.add_argument("--train_file", type=Path, default=Path("../Data/GridData_DS1_train_data.processed"))
-    data_group.add_argument("--val_file", type=Path, default=Path("../Data/GridData_DS1_test_data.processed"))
-    data_group.add_argument(
-        "--label", type=str, default="average_tokens_per_place", choices=typing.get_args(SPNAnalysisResultLabel)
-    )
-
-    model_group = parser.add_argument_group("Model Settings")
-    model_group.add_argument(
-        "--gnn_operator",
-        type=str,
-        default="rgat",
-        choices=["rgat", "heat"],
-        help="The Heterogeneous GNN operator to optimize.",
-    )
-    model_group.add_argument(
-        "--all", action="store_true", help="If specified, runs optimization for all available operators."
-    )
-
-    opt_group = parser.add_argument_group("Optimization Settings")
-    opt_group.add_argument("--n_trials", type=int, default=100, help="Number of optimization trials.")
-    opt_group.add_argument("--timeout", type=int, default=3600 * 2, help="Timeout for the study in seconds.")
-    opt_group.add_argument(
-        "--study_name", type=str, default="hetero_gnn_spn_optimization", help="Base name for the Optuna study."
-    )
-    opt_group.add_argument(
-        "--storage_dir", type=Path, default=Path("../optuna_studies"), help="Directory to save Optuna study databases."
-    )
-
-    training_group = parser.add_argument_group("Fixed Training Hyperparameters")
-    training_group.add_argument("--max_epochs", type=int, default=100)
-    training_group.add_argument("--patience", type=int, default=10, help="Patience for early stopping.")
-    training_group.add_argument("--num_workers", type=int, default=3)
-
-    return parser.parse_args()
-
-
-def prepare_and_cache_data(args: argparse.Namespace) -> Tuple[List[HeteroData], List[HeteroData], str]:
+def prepare_and_cache_data(config: argparse.Namespace) -> Tuple[List[HeteroData], List[HeteroData], str]:
     """
     Loads, processes, and caches the training and validation data in heterogeneous format.
     """
@@ -71,12 +31,12 @@ def prepare_and_cache_data(args: argparse.Namespace) -> Tuple[List[HeteroData], 
     cache_dir = tempfile.mkdtemp()
     print(f"Cache directory created at: {cache_dir}")
 
-    raw_train_data = load_spn_data_from_files(args.train_file)
-    raw_val_data = load_spn_data_from_files(args.val_file)
+    raw_train_data = load_spn_data_from_files(config.train_file)
+    raw_val_data = load_spn_data_from_files(config.val_file)
 
     # Use SPNDataModule to process the data once in heterogeneous mode
     temp_dm = SPNDataModule(
-        label_to_predict=args.label,
+        label_to_predict=config.label,
         train_data_list=raw_train_data,
         val_data_list=raw_val_data,
         batch_size=128,  # Placeholder, not used for processing
@@ -95,12 +55,12 @@ def prepare_and_cache_data(args: argparse.Namespace) -> Tuple[List[HeteroData], 
 
 def objective(
     trial: optuna.Trial,
-    args: argparse.Namespace,
+    config: argparse.Namespace,
     processed_train_data: List[HeteroData],
     processed_val_data: List[HeteroData],
 ) -> float:
     """The Optuna objective function for heterogeneous models."""
-    gnn_operator = args.gnn_operator
+    gnn_operator = config.gnn_operator
 
     hyperparams = {
         "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
@@ -112,11 +72,11 @@ def objective(
     }
 
     data_module = SPNDataModule(
-        label_to_predict=args.label,
+        label_to_predict=config.label,
         train_data_list=[],
         val_data_list=[],
         batch_size=hyperparams["batch_size"],
-        num_workers=args.num_workers,
+        num_workers=config.num_workers,
         heterogeneous=True,
     )
     data_module.train_data = processed_train_data
@@ -157,13 +117,13 @@ def objective(
         raise ValueError(f"Unsupported GNN operator: {gnn_operator}")
 
     logger = TensorBoardLogger(
-        save_dir="../optuna_logs", name=f"{args.study_name}_{gnn_operator}", version=f"trial_{trial.number}"
+        save_dir="../optuna_logs", name=f"{config.study_name}_{gnn_operator}", version=f"trial_{trial.number}"
     )
     pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val/loss")
-    early_stop_callback = EarlyStopping(monitor="val_loss", patience=args.patience, verbose=False, mode="min")
+    early_stop_callback = EarlyStopping(monitor="val_loss", patience=config.patience, verbose=False, mode="min")
 
     trainer = pl.Trainer(
-        max_epochs=args.max_epochs,
+        max_epochs=config.max_epochs,
         accelerator="auto",
         devices="auto",
         logger=logger,
@@ -183,21 +143,24 @@ def objective(
 
 def main():
     """Main function to run the optimization study."""
-    args = get_args()
-    args.storage_dir.mkdir(parents=True, exist_ok=True)
+    config = load_config()
 
-    operators_to_run = ["rgat", "heat"] if args.all else [args.gnn_operator]
+    config.io.studies_dir.mkdir(parents=True, exist_ok=True)
+
+    operators_to_run = ["rgat", "heat"] if config.hetero_optimization.all_operators else [config.hetero_model.gnn_operator]
 
     cache_dir = None
     try:
-        processed_train_data, processed_val_data, cache_dir = prepare_and_cache_data(args)
+        # Create a combined config for prepare_and_cache_data
+        data_config = argparse.Namespace(**vars(config.io), **vars(config.model))
+        processed_train_data, processed_val_data, cache_dir = prepare_and_cache_data(data_config)
 
         for gnn_operator in tqdm(operators_to_run, desc="Optimizing Operators"):
-            run_args = argparse.Namespace(**vars(args))
-            run_args.gnn_operator = gnn_operator
+            run_config = argparse.Namespace(**vars(config.io), **vars(config.hetero_model), **vars(config.hetero_training), **vars(config.hetero_optimization))
+            run_config.gnn_operator = gnn_operator
 
-            study_name = f"{run_args.study_name}_{run_args.gnn_operator}"
-            storage_name = f"sqlite:///{run_args.storage_dir / study_name}.db"
+            study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
+            storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
 
             study = optuna.create_study(
                 study_name=study_name,
@@ -206,18 +169,18 @@ def main():
                 pruner=optuna.pruners.MedianPruner(),
                 load_if_exists=True,
             )
-            study.set_user_attr("label", run_args.label)
-            study.set_user_attr("gnn_operator", run_args.gnn_operator)
+            study.set_user_attr("label", run_config.label)
+            study.set_user_attr("gnn_operator", run_config.gnn_operator)
 
-            print(f"\n--- Starting Optuna study '{study_name}' for operator '{run_args.gnn_operator}' ---")
+            print(f"\n--- Starting Optuna study '{study_name}' for operator '{run_config.gnn_operator}' ---")
             study.optimize(
-                lambda trial: objective(trial, run_args, processed_train_data, processed_val_data),
-                n_trials=run_args.n_trials,
-                timeout=run_args.timeout,
+                lambda trial: objective(trial, run_config, processed_train_data, processed_val_data),
+                n_trials=run_config.n_trials,
+                timeout=run_config.timeout,
                 n_jobs=1,
             )
 
-            print(f"\n--- Optimization Finished for operator '{run_args.gnn_operator}' ---")
+            print(f"\n--- Optimization Finished for operator '{run_config.gnn_operator}' ---")
             print("Best trial:")
             best_trial = study.best_trial
             print(f"  Value (val/loss): {best_trial.value}")

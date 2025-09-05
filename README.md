@@ -6,6 +6,8 @@ This project uses Graph Neural Networks (GNNs) to analyze and predict properties
 
 All scripts in this project are configured using a centralized TOML configuration file. The default configuration is located at `configs/default_config.toml`.
 
+For a detailed explanation of all available parameters, please see the [`configs/CONFIG_OPTIONS.md`](configs/CONFIG_OPTIONS.md) file.
+
 ### Custom Configuration
 
 You can create your own configuration file by copying and modifying the default one. To run a script with a custom configuration, use the `--config` argument:

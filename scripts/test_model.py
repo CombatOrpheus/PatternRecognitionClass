@@ -174,17 +174,7 @@ from src.config_utils import load_config
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    parser = argparse.ArgumentParser(
-        description="Evaluate all trained models from an experiment on a directory of SPN data, using a configuration file."
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path("configs/default_config.toml"),
-        help="Path to the configuration file.",
-    )
-    args = parser.parse_args()
-    config = load_config(args.config)
+    config = load_config()
 
     evaluate_experiment_on_directory(
         experiment_dir=config.io.experiment_dir,

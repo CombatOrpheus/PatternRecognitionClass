@@ -114,15 +114,7 @@ def analyze_and_plot_results(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze and plot GNN model performance and characteristics from a configuration file.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path("configs/default_config.toml"),
-        help="Path to the configuration file.",
-    )
-    args = parser.parse_args()
-    config = load_config(args.config)
+    config = load_config()
 
     analyze_and_plot_results(
         stats_results_file=config.io.stats_results_file,

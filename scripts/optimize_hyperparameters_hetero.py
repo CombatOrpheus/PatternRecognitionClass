@@ -143,15 +143,7 @@ def objective(
 
 def main():
     """Main function to run the optimization study."""
-    parser = argparse.ArgumentParser(description="Optimize Heterogeneous GNN model hyperparameters using Optuna from a configuration file.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path("configs/default_config.toml"),
-        help="Path to the configuration file.",
-    )
-    args = parser.parse_args()
-    config = load_config(args.config)
+    config = load_config()
 
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
 

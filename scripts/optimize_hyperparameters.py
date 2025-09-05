@@ -102,15 +102,7 @@ def objective(trial: optuna.Trial, config: argparse.Namespace, train_data: Homog
 
 def main():
     """Main function to run the hyperparameter optimization study."""
-    parser = argparse.ArgumentParser(description="Optimize GNN model hyperparameters using Optuna from a configuration file.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path("configs/default_config.toml"),
-        help="Path to the configuration file.",
-    )
-    args = parser.parse_args()
-    config = load_config(args.config)
+    config = load_config()
 
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
     operators_to_run = ["gcn", "tag", "cheb", "sgc", "ssg", "mixed"] if config.optimization.all_operators else [config.model.gnn_operator]

@@ -121,15 +121,7 @@ def run_single_training_run(run_config: argparse.Namespace, run_id: int, data_mo
 
 def main():
     """Main function to orchestrate the entire experiment workflow."""
-    parser = argparse.ArgumentParser(description="Run a full GNN experiment from a configuration file.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path("configs/default_config.toml"),
-        help="Path to the configuration file.",
-    )
-    args = parser.parse_args()
-    config = load_config(args.config)
+    config = load_config()
 
     selected_studies = select_studies(config.io.studies_dir)
     if not selected_studies:

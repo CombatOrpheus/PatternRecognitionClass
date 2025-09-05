@@ -14,6 +14,18 @@ You can create your own configuration file by copying and modifying the default 
 python scripts/train_model.py --config /path/to/your/custom_config.toml
 ```
 
+### Overriding Parameters via Command Line
+
+You can also override any parameter from the configuration file directly from the command line. The command-line arguments are named based on their section and key in the TOML file.
+
+For example, to override the number of epochs in the `training` section, you can use the `--training.max_epochs` argument:
+
+```bash
+python scripts/train_model.py --training.max_epochs 200
+```
+
+This will run the training for 200 epochs, while using the other parameters from the default configuration file.
+
 ## Usage
 
 Here are some examples of how to run the different scripts:

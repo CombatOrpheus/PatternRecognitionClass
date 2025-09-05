@@ -43,10 +43,13 @@ This section contains parameters for the homogeneous GNN models.
 
 - `label`: The label to predict.
   - Default: `"average_tokens_network"`
+  - Choices: `["average_firing_rates", "steady_state_probabilities", "token_probability_density_function", "average_tokens_per_place", "average_tokens_network"]`
 - `prediction_level`: The prediction level, either "node" or "graph".
   - Default: `"graph"`
+  - Choices: `["node", "graph"]`
 - `gnn_operator`: The GNN operator to use.
   - Default: `"gcn"`
+  - Choices: `["gcn", "tag", "cheb", "sgc", "ssg", "mixed"]`
 
 ## `[training]` - Homogeneous Model Training
 
@@ -82,6 +85,7 @@ This section contains parameters for the heterogeneous GNN models.
 
 - `gnn_operator`: The Heterogeneous GNN operator to use.
   - Default: `"rgat"`
+  - Choices: `["rgat", "heat"]`
 
 ## `[hetero_training]` - Heterogeneous Model Training
 

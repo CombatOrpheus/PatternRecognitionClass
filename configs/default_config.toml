@@ -1,0 +1,50 @@
+# Default configuration for the GNN experiments
+
+[io]
+root = "processed_data/SPN_homogeneous"
+raw_data_dir = "Data"
+train_file = "GridData_DS1_train_data.processed"
+test_file = "GridData_DS1_all_data.processed"
+val_file = "../Data/GridData_DS1_test_data.processed"
+studies_dir = "optuna_studies"
+state_dict_dir = "results/state_dicts"
+stats_results_file = "results/statistical_results.parquet"
+cross_eval_results_file = "results/cross_dataset_evaluation.parquet"
+output_dir = "results/analysis_plots"
+log_dir = "lightning_logs"
+exp_name = "gnn_spn_experiment"
+experiment_dir = "lightning_logs/gnn_spn_experiment"
+data_dir = "../Data"
+output_file = "../results/cross_dataset_evaluation.parquet"
+
+[model]
+label = "average_tokens_network"
+prediction_level = "graph"
+gnn_operator = "gcn"
+
+[training]
+num_runs = 30
+num_workers = 3
+max_epochs = 100
+patience = 10
+val_split = 0.2
+
+[optimization]
+all_operators = false
+n_trials = 100
+timeout = 7200
+study_name = "gnn_spn_optimization"
+
+[hetero_model]
+gnn_operator = "rgat"
+
+[hetero_training]
+max_epochs = 100
+patience = 10
+num_workers = 3
+
+[hetero_optimization]
+all_operators = false
+n_trials = 100
+timeout = 7200
+study_name = "hetero_gnn_spn_optimization"

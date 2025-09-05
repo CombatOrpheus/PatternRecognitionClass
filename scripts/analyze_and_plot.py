@@ -7,6 +7,8 @@ import scikit_posthocs as sp
 import scipy.stats as ss
 import seaborn as sns
 
+from src.config_utils import load_config
+
 
 def analyze_and_plot_results(
     stats_results_file: Path, cross_eval_results_file: Path, output_dir: Path, metric: str = "test/rmse"
@@ -111,31 +113,19 @@ def analyze_and_plot_results(
     print("\n--- Analysis complete. ---")
 
 
-def get_analysis_args() -> argparse.Namespace:
-    """Parses command-line arguments for the analysis script."""
-    parser = argparse.ArgumentParser(description="Analyze and plot GNN model performance and characteristics.")
-    parser.add_argument(
-        "--stats_results_file",
-        type=Path,
-        default=Path("results/statistical_results.parquet"),
-    )
-    parser.add_argument(
-        "--cross_eval_results_file",
-        type=Path,
-        default=Path("results/cross_dataset_evaluation.parquet"),
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=Path,
-        default=Path("results/analysis_plots"),
-    )
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
-    args = get_analysis_args()
+    parser = argparse.ArgumentParser(description="Analyze and plot GNN model performance and characteristics from a configuration file.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/default_config.toml"),
+        help="Path to the configuration file.",
+    )
+    args = parser.parse_args()
+    config = load_config(args.config)
+
     analyze_and_plot_results(
-        stats_results_file=args.stats_results_file,
-        cross_eval_results_file=args.cross_eval_results_file,
-        output_dir=args.output_dir,
+        stats_results_file=config.io.stats_results_file,
+        cross_eval_results_file=config.io.cross_eval_results_file,
+        output_dir=config.io.output_dir,
     )

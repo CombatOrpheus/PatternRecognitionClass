@@ -10,7 +10,7 @@ aiohttp==3.12.15
     #   torch-geometric
 aiosignal==1.4.0
     # via aiohttp
-alembic==1.16.4
+alembic==1.16.5
     # via optuna
 anyio==4.10.0
     # via
@@ -34,8 +34,10 @@ attrs==25.3.0
     #   referencing
 babel==2.17.0
     # via jupyterlab-server
-beautifulsoup4==4.13.4
+beautifulsoup4==4.13.5
     # via nbconvert
+black==25.1.0
+    # via spn-gnn (pyproject.toml)
 bleach==6.2.0
     # via nbconvert
 certifi==2025.8.3
@@ -45,10 +47,11 @@ certifi==2025.8.3
     #   requests
 cffi==1.17.1
     # via argon2-cffi-bindings
-charset-normalizer==3.4.2
+charset-normalizer==3.4.3
     # via requests
 click==8.2.1
     # via
+    #   black
     #   marimo
     #   uvicorn
 colorlog==6.9.0
@@ -57,6 +60,10 @@ comm==0.2.3
     # via
     #   ipykernel
     #   ipywidgets
+contourpy==1.3.3
+    # via matplotlib
+cycler==0.12.1
+    # via matplotlib
 debugpy==1.8.16
     # via ipykernel
 decorator==5.2.1
@@ -65,19 +72,21 @@ defusedxml==0.7.1
     # via nbconvert
 docutils==0.22
     # via marimo
-executing==2.2.0
+executing==2.2.1
     # via stack-data
-fastjsonschema==2.21.1
+fastjsonschema==2.21.2
     # via nbformat
-filelock==3.18.0
+filelock==3.19.1
     # via torch
+fonttools==4.59.2
+    # via matplotlib
 fqdn==1.5.1
     # via jsonschema
 frozenlist==1.7.0
     # via
     #   aiohttp
     #   aiosignal
-fsspec==2025.7.0
+fsspec==2025.9.0
     # via
     #   lightning
     #   pytorch-lightning
@@ -107,7 +116,7 @@ ipykernel==6.30.1
     #   jupyter
     #   jupyter-console
     #   jupyterlab
-ipython==9.4.0
+ipython==9.5.0
     # via
     #   spn-gnn (pyproject.toml)
     #   ipykernel
@@ -133,13 +142,13 @@ jinja2==3.1.6
     #   nbconvert
     #   torch
     #   torch-geometric
-joblib==1.5.1
+joblib==1.5.2
     # via scikit-learn
-json5==0.12.0
+json5==0.12.1
     # via jupyterlab-server
 jsonpointer==3.0.0
     # via jsonschema
-jsonschema==4.25.0
+jsonschema==4.25.1
     # via
     #   jupyter-events
     #   jupyterlab-server
@@ -168,9 +177,9 @@ jupyter-core==5.8.1
     #   nbformat
 jupyter-events==0.12.0
     # via jupyter-server
-jupyter-lsp==2.2.6
+jupyter-lsp==2.3.0
     # via jupyterlab
-jupyter-server==2.16.0
+jupyter-server==2.17.0
     # via
     #   jupyter-lsp
     #   jupyterlab
@@ -179,7 +188,7 @@ jupyter-server==2.16.0
     #   notebook-shim
 jupyter-server-terminals==0.5.3
     # via jupyter-server
-jupyterlab==4.4.5
+jupyterlab==4.4.7
     # via
     #   spn-gnn (pyproject.toml)
     #   jupyter
@@ -192,22 +201,26 @@ jupyterlab-server==2.27.3
     #   notebook
 jupyterlab-widgets==3.0.15
     # via ipywidgets
+kiwisolver==1.4.9
+    # via matplotlib
 lark==1.2.2
     # via rfc3987-syntax
-lightning==2.5.2
-    # via spn-gnn (pyproject.toml)
+lightning==2.5.4
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   optuna-integration
 lightning-utilities==0.15.2
     # via
     #   lightning
     #   pytorch-lightning
     #   torchmetrics
-loro==1.5.3
+loro==1.6.0
     # via marimo
 mako==1.3.10
     # via alembic
-marimo==0.14.16
+marimo==0.15.2
     # via spn-gnn (pyproject.toml)
-markdown==3.8.2
+markdown==3.9
     # via
     #   marimo
     #   pymdown-extensions
@@ -218,19 +231,26 @@ markupsafe==3.0.2
     #   mako
     #   nbconvert
     #   werkzeug
+matplotlib==3.10.6
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   scikit-posthocs
+    #   seaborn
 matplotlib-inline==0.1.7
     # via
     #   ipykernel
     #   ipython
-mistune==3.1.3
+mistune==3.1.4
     # via nbconvert
 mpmath==1.3.0
     # via sympy
-multidict==6.6.3
+multidict==6.6.4
     # via
     #   aiohttp
     #   yarl
-narwhals==2.0.1
+mypy-extensions==1.1.0
+    # via black
+narwhals==2.3.0
     # via marimo
 nbclient==0.10.2
     # via nbconvert
@@ -255,13 +275,25 @@ notebook-shim==0.2.4
     #   notebook
 numpy==2.3.2
     # via
+    #   contourpy
+    #   matplotlib
+    #   numpy-typing-compat
     #   optuna
+    #   optype
+    #   pandas
+    #   pandas-stubs
+    #   patsy
     #   scikit-learn
+    #   scikit-posthocs
     #   scipy
+    #   seaborn
+    #   statsmodels
     #   tensorboard
     #   torch-geometric
     #   torchmetrics
     #   torchvision
+numpy-typing-compat==20250818.2.3
+    # via optype
 nvidia-cublas-cu12==12.8.4.1
     # via
     #   nvidia-cudnn-cu12
@@ -299,12 +331,17 @@ nvidia-nvjitlink-cu12==12.8.93
     #   torch
 nvidia-nvtx-cu12==12.8.90
     # via torch
-optuna==4.4.0
+optuna==4.5.0
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   optuna-integration
+optuna-integration==4.5.0
     # via spn-gnn (pyproject.toml)
-overrides==7.7.0
-    # via jupyter-server
+optype==0.13.4
+    # via scipy-stubs
 packaging==25.0
     # via
+    #   black
     #   ipykernel
     #   jupyter-events
     #   jupyter-server
@@ -313,26 +350,43 @@ packaging==25.0
     #   lightning
     #   lightning-utilities
     #   marimo
+    #   matplotlib
     #   nbconvert
     #   optuna
     #   pytorch-lightning
+    #   statsmodels
     #   tensorboard
     #   torchmetrics
+pandas==2.3.2
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   scikit-posthocs
+    #   seaborn
+    #   statsmodels
+pandas-stubs==2.3.0.250703
+    # via spn-gnn (pyproject.toml)
 pandocfilters==1.5.1
     # via nbconvert
-parso==0.8.4
+parso==0.8.5
     # via jedi
+pathspec==0.12.1
+    # via black
+patsy==1.0.1
+    # via statsmodels
 pexpect==4.9.0
     # via ipython
 pillow==11.3.0
     # via
+    #   matplotlib
     #   tensorboard
     #   torchvision
-platformdirs==4.3.8
-    # via jupyter-core
+platformdirs==4.4.0
+    # via
+    #   black
+    #   jupyter-core
 prometheus-client==0.22.1
     # via jupyter-server
-prompt-toolkit==3.0.51
+prompt-toolkit==3.0.52
     # via
     #   ipython
     #   jupyter-console
@@ -340,7 +394,7 @@ propcache==0.3.2
     # via
     #   aiohttp
     #   yarl
-protobuf==6.31.1
+protobuf==6.32.0
     # via tensorboard
 psutil==7.0.0
     # via
@@ -353,6 +407,8 @@ ptyprocess==0.7.0
     #   terminado
 pure-eval==0.2.3
     # via stack-data
+pyarrow==21.0.0
+    # via spn-gnn (pyproject.toml)
 pycparser==2.22
     # via cffi
 pygments==2.19.2
@@ -365,15 +421,23 @@ pygments==2.19.2
 pymdown-extensions==10.16.1
     # via marimo
 pyparsing==3.2.3
-    # via torch-geometric
+    # via
+    #   matplotlib
+    #   torch-geometric
 python-dateutil==2.9.0.post0
     # via
     #   arrow
     #   jupyter-client
+    #   matplotlib
+    #   pandas
 python-json-logger==3.3.0
     # via jupyter-events
-pytorch-lightning==2.5.2
-    # via lightning
+pytorch-lightning==2.5.4
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   lightning
+pytz==2025.2
+    # via pandas
 pyyaml==6.0.2
     # via
     #   jupyter-events
@@ -382,7 +446,7 @@ pyyaml==6.0.2
     #   optuna
     #   pymdown-extensions
     #   pytorch-lightning
-pyzmq==27.0.1
+pyzmq==27.0.2
     # via
     #   ipykernel
     #   jupyter-client
@@ -393,7 +457,7 @@ referencing==0.36.2
     #   jsonschema
     #   jsonschema-specifications
     #   jupyter-events
-requests==2.32.4
+requests==2.32.5
     # via
     #   jupyterlab-server
     #   torch-geometric
@@ -407,14 +471,26 @@ rfc3986-validator==0.1.1
     #   jupyter-events
 rfc3987-syntax==1.1.0
     # via jsonschema
-rpds-py==0.27.0
+rpds-py==0.27.1
     # via
     #   jsonschema
     #   referencing
 scikit-learn==1.7.1
     # via spn-gnn (pyproject.toml)
+scikit-posthocs==0.11.4
+    # via spn-gnn (pyproject.toml)
 scipy==1.16.1
-    # via scikit-learn
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   scikit-learn
+    #   scikit-posthocs
+    #   statsmodels
+scipy-stubs==1.16.1.0
+    # via spn-gnn (pyproject.toml)
+seaborn==0.13.2
+    # via
+    #   spn-gnn (pyproject.toml)
+    #   scikit-posthocs
 send2trash==1.8.3
     # via jupyter-server
 setuptools==80.9.0
@@ -430,16 +506,18 @@ six==1.17.0
     #   rfc3339-validator
 sniffio==1.3.1
     # via anyio
-soupsieve==2.7
+soupsieve==2.8
     # via beautifulsoup4
-sqlalchemy==2.0.42
+sqlalchemy==2.0.43
     # via
     #   alembic
     #   optuna
 stack-data==0.6.3
     # via ipython
-starlette==0.47.2
+starlette==0.47.3
     # via marimo
+statsmodels==0.14.5
+    # via scikit-posthocs
 sympy==1.14.0
     # via torch
 tensorboard==2.20.0
@@ -454,6 +532,8 @@ threadpoolctl==3.6.0
     # via scikit-learn
 tinycss2==1.4.0
     # via bleach
+toml==0.10.2
+    # via spn-gnn (pyproject.toml)
 tomlkit==0.13.3
     # via marimo
 torch==2.8.0+cu128
@@ -468,13 +548,13 @@ torch-geometric==2.6.1
     # via spn-gnn (pyproject.toml)
 torchaudio==2.8.0
     # via spn-gnn (pyproject.toml)
-torchmetrics==1.8.1
+torchmetrics==1.8.2
     # via
     #   lightning
     #   pytorch-lightning
 torchvision==0.23.0+cu128
     # via spn-gnn (pyproject.toml)
-tornado==6.5.1
+tornado==6.5.2
     # via
     #   ipykernel
     #   jupyter-client
@@ -505,9 +585,11 @@ traitlets==5.14.3
     #   nbformat
 triton==3.4.0
     # via torch
-types-python-dateutil==2.9.0.20250708
+types-python-dateutil==2.9.0.20250822
     # via arrow
-typing-extensions==4.14.1
+types-pytz==2025.2.0.20250809
+    # via pandas-stubs
+typing-extensions==4.15.0
     # via
     #   aiosignal
     #   alembic
@@ -515,11 +597,14 @@ typing-extensions==4.14.1
     #   beautifulsoup4
     #   lightning
     #   lightning-utilities
+    #   optype
     #   pytorch-lightning
     #   referencing
     #   sqlalchemy
     #   starlette
     #   torch
+tzdata==2025.2
+    # via pandas
 uri-template==1.3.0
     # via jsonschema
 urllib3==2.5.0

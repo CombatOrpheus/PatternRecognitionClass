@@ -170,33 +170,24 @@ def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path,
         print("\n--- No successful evaluations were completed. No output file generated. ---")
 
 
-def get_test_args():
-    """Parses command-line arguments for the test script."""
-    parser = argparse.ArgumentParser(
-        description="Evaluate all trained models from an experiment on a directory of SPN data."
-    )
-    parser.add_argument(
-        "experiment_dir",
-        type=Path,
-        help="Path to the main experiment log directory (e.g., lightning_logs/my_experiment).",
-    )
-    parser.add_argument(
-        "--data_dir", type=Path, default=Path("../Data"), help="Directory containing the .processed test files."
-    )
-    parser.add_argument(
-        "--output_file",
-        type=Path,
-        default=Path("../results/cross_dataset_evaluation.parquet"),
-        help="Path to the output Parquet file for the results.",
-    )
-    return parser.parse_args()
-
+from src.config_utils import load_config
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    args = get_test_args()
+    parser = argparse.ArgumentParser(
+        description="Evaluate all trained models from an experiment on a directory of SPN data, using a configuration file."
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/default_config.toml"),
+        help="Path to the configuration file.",
+    )
+    args = parser.parse_args()
+    config = load_config(args.config)
+
     evaluate_experiment_on_directory(
-        experiment_dir=args.experiment_dir,
-        data_directory=args.data_dir,
-        output_parquet_path=args.output_file,
+        experiment_dir=config.io.experiment_dir,
+        data_directory=config.io.data_dir,
+        output_parquet_path=config.io.output_file,
     )

@@ -19,8 +19,8 @@ from torch_geometric.nn import (
     TAGConv,
     SGConv,
     SSGConv,
-    GATConv,  # **NEW**: Import for GATConv
-    GINConv,  # **NEW**: Import for GINConv
+    GATConv,
+    GINConv,
     global_add_pool,
 )
 from torch_geometric.nn.models import MLP
@@ -66,7 +66,8 @@ class BaseGNN_SPN_Model(pl.LightningModule):
         return self._common_step(batch, "val")
 
     def test_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
-        return self._common_step(batch, "test")
+        loss = self._common_step(batch, "test")
+        return loss
 
     def configure_optimizers(self) -> Dict[str, Any]:
         optimizer = torch.optim.AdamW(
@@ -155,7 +156,7 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
 
         metrics = getattr(self, f"{prefix}_metrics")
         metrics.update(y_pred, y_true)
-        self.log_dict(metrics, on_step=False, on_epoch=True)
+        self.log_dict({f"{prefix}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
 
         return loss
 
@@ -231,7 +232,7 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
 
         metrics = getattr(self, f"{prefix}_metrics")
         metrics.update(y_pred, y_true)
-        self.log_dict(metrics, on_step=False, on_epoch=True)
+        self.log_dict({f"{prefix}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
 
         return loss
 
@@ -309,6 +310,6 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
 
         metrics = getattr(self, f"{prefix}_metrics")
         metrics.update(y_pred, y_true)
-        self.log_dict(metrics, on_step=False, on_epoch=True)
+        self.log_dict({f"{prefix}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
 
         return loss

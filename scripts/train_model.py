@@ -138,8 +138,8 @@ def main():
 
         print(f"\n--- Training Phase for operator: {run_config.gnn_operator} ---")
 
-        train_dataset = HomogeneousSPNDataset(run_config.root, run_config.raw_data_dir, run_config.train_file, run_config.label)
-        test_dataset = HomogeneousSPNDataset(run_config.root, run_config.raw_data_dir, run_config.test_file, run_config.label)
+        train_dataset = HomogeneousSPNDataset(str(run_config.root), str(run_config.raw_data_dir), str(run_config.train_file), run_config.label)
+        test_dataset = HomogeneousSPNDataset(str(run_config.root), str(run_config.raw_data_dir), str(run_config.test_file), run_config.label)
 
         data_module = SPNDataModule(
             train_data_list=list(train_dataset),

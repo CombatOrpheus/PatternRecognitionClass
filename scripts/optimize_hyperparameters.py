@@ -109,9 +109,9 @@ def main():
 
     print("--- Pre-loading and processing data ---")
     train_dataset = HomogeneousSPNDataset(
-        root=config.io.root,
-        raw_data_dir=config.io.raw_data_dir,
-        raw_file_name=config.io.train_file,
+        root=str(config.io.root),
+        raw_data_dir=str(config.io.raw_data_dir),
+        raw_file_name=str(config.io.train_file),
         label_to_predict=config.model.label,
     )
     print("Data loaded successfully.")

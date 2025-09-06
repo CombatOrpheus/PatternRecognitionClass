@@ -27,30 +27,30 @@ class BaseSPNDataset(InMemoryDataset):
 
     def __init__(
         self,
-        root: str,
-        raw_data_dir: str,
-        raw_file_name: str,
+        root: Union[str, Path],
+        raw_data_dir: Union[str, Path],
+        raw_file_name: Union[str, Path],
         label_to_predict: SPNAnalysisResultLabel,
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
     ):
-        self.raw_data_dir = raw_data_dir
-        self.raw_file_name = raw_file_name
+        self.raw_data_dir = Path(raw_data_dir)
+        self.raw_file_name = Path(raw_file_name)
         self.label_to_predict = label_to_predict
         super().__init__(root, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
 
     @property
     def raw_dir(self) -> str:
-        return self.raw_data_dir
+        return str(self.raw_data_dir)
 
     @property
     def raw_file_names(self) -> List[str]:
-        return [self.raw_file_name]
+        return [self.raw_file_name.name]
 
     @property
     def processed_file_names(self) -> str:
-        sanitized_name = self.raw_file_name.replace(".processed", "")
+        sanitized_name = self.raw_file_name.stem
         return f"data_{sanitized_name}_{self.label_to_predict}.pt"
 
     def download(self):
@@ -83,7 +83,7 @@ class HomogeneousSPNDataset(BaseSPNDataset):
 
     def process(self):
         data_list = []
-        raw_path = self.raw_paths[0]
+        raw_path = Path(self.raw_paths[0])
         for spn_data in tqdm(load_spn_data_lazily(Path(raw_path)), desc=f"Processing {self.raw_file_name}"):
             node_features, edge_features, edge_pairs = spn_data.to_information()
             label = spn_data.get_analysis_result(self.label_to_predict)
@@ -105,7 +105,7 @@ class HeterogeneousSPNDataset(BaseSPNDataset):
 
     def process(self):
         data_list = []
-        raw_path = self.raw_paths[0]
+        raw_path = Path(self.raw_paths[0])
         for spn_data in tqdm(load_spn_data_lazily(Path(raw_path)), desc=f"Processing {self.raw_file_name}"):
             data = spn_data.to_hetero_information()
             label = spn_data.get_analysis_result(self.label_to_predict)
@@ -126,7 +126,7 @@ class ReachabilityGraphInMemoryDataset(BaseSPNDataset):
 
     def process(self):
         data_list = []
-        raw_path = self.raw_paths[0]
+        raw_path = Path(self.raw_paths[0])
         all_spn_data = list(load_spn_data_lazily(Path(raw_path)))
         max_num_places = max(spn.spn.shape[0] for spn in all_spn_data)
 

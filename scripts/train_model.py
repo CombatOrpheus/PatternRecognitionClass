@@ -131,6 +131,7 @@ def run_single_training_run(args: argparse.Namespace, run_id: int, data_module: 
         callbacks=[checkpoint_callback, EarlyStopping(monitor="val/loss", patience=args.patience)],
         enable_progress_bar=False,
         enable_model_summary=False,
+        log_every_n_steps=1,
     )
     trainer.fit(model, datamodule=data_module)
 

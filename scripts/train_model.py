@@ -198,6 +198,27 @@ def main():
         trainable_params = sum(p.numel() for p in model_for_summary.parameters() if p.requires_grad)
 
         for i in tqdm(range(run_args.num_runs), desc=f"Training {run_args.gnn_operator}"):
+            seed = BASE_SEED + i
+            artifact_dir_path = run_args.state_dict_dir / run_args.exp_name / f"{run_args.gnn_operator}_run_{i}_seed_{seed}"
+
+            # Check if this run has already been completed
+            hparams_path = artifact_dir_path / "hparams.json"
+            if artifact_dir_path.exists() and (artifact_dir_path / "best_model.pt").exists() and hparams_path.exists():
+                with open(hparams_path, "r") as f:
+                    try:
+                        existing_hparams = json.load(f)
+                        current_hparams = {
+                            k: v for k, v in vars(run_args).items() if isinstance(v, (str, int, float, bool))
+                        }
+
+                        if existing_hparams == current_hparams:
+                            tqdm.write(f"Skipping run {i} for {run_args.gnn_operator}: identical completed run found.")
+                            continue
+                        else:
+                            tqdm.write(f"Re-running run {i} for {run_args.gnn_operator}: hyperparameters have changed.")
+                    except json.JSONDecodeError:
+                        tqdm.write(f"Re-running run {i} for {run_args.gnn_operator}: corrupted hparams.json found.")
+
             artifact_dir, stats_result = run_single_training_run(run_args, i, data_module)
 
             hparams_to_save = vars(run_args).copy()

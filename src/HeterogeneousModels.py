@@ -20,7 +20,7 @@ from torch.nn import ModuleDict, ModuleList
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import HeteroConv, RGATConv, HEATConv, Linear
 from torchmetrics import MetricCollection
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
+from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score, MeanAbsolutePercentageError
 
 
 class LightningSPNModule(pl.LightningModule):
@@ -36,6 +36,7 @@ class LightningSPNModule(pl.LightningModule):
 
         self.node_types = ["place", "transition"]
         for split in ["train", "val", "test"]:
+            # Per-node-type metrics for detailed analysis
             metrics_per_node = ModuleDict(
                 {
                     nt: MetricCollection(
@@ -51,10 +52,25 @@ class LightningSPNModule(pl.LightningModule):
             )
             setattr(self, f"{split}_metrics", metrics_per_node)
 
+            # Aggregate metrics for overall performance and compatibility with analysis scripts
+            agg_metrics = MetricCollection(
+                {
+                    "mae": MeanAbsoluteError(),
+                    "mse": MeanSquaredError(),
+                    "rmse": MeanSquaredError(squared=False),
+                    "r2": R2Score(),
+                    "mape": MeanAbsolutePercentageError(),
+                }
+            )
+            setattr(self, f"{split}_agg_metrics", agg_metrics)
+
     def _common_step(self, batch: HeteroData, prefix: str) -> torch.Tensor:
         output_dict = self(batch)
         total_loss = 0.0
         metrics_dict = getattr(self, f"{prefix}_metrics")
+        agg_metrics_dict = getattr(self, f"{prefix}_agg_metrics")
+
+        all_preds, all_trues = [], []
 
         for node_type, y_pred in output_dict.items():
             y_true = batch[node_type].y if hasattr(batch[node_type], "y") else None
@@ -64,9 +80,21 @@ class LightningSPNModule(pl.LightningModule):
             loss = F.mse_loss(y_pred.squeeze(), y_true.float())
             total_loss += loss
 
+            # Log per-node-type metrics
             metrics = metrics_dict[node_type]
             metrics.update(y_pred.squeeze(), y_true)
             self.log_dict({f"{prefix}/{node_type}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
+
+            # Collect for aggregate metrics
+            all_preds.append(y_pred.squeeze())
+            all_trues.append(y_true)
+
+        # **MODIFIED**: Compute and log aggregate metrics if applicable
+        if all_preds:
+            agg_preds = torch.cat(all_preds)
+            agg_trues = torch.cat(all_trues)
+            agg_metrics_dict.update(agg_preds, agg_trues)
+            self.log_dict({f"{prefix}/{k}": v for k, v in agg_metrics_dict.items()}, on_step=False, on_epoch=True)
 
         if total_loss == 0.0:
             return torch.tensor(0.0, device=self.device, requires_grad=True)
@@ -81,7 +109,8 @@ class LightningSPNModule(pl.LightningModule):
         return self._common_step(batch, "val")
 
     def test_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        return self._common_step(batch, "test")
+        loss = self._common_step(batch, "test")
+        return loss
 
     def configure_optimizers(self) -> Dict[str, Any]:
         return {
@@ -102,7 +131,6 @@ class BaseHeteroGNN(LightningSPNModule, ABC):
         super().__init__(kwargs.get("learning_rate", 1e-3), kwargs.get("weight_decay", 1e-5))
         self.save_hyperparameters()
         self.convs = ModuleList()
-        # The final linear layers are now defined in the child classes
         self.lin = ModuleDict()
 
     @abstractmethod
@@ -135,6 +163,7 @@ class RGAT_SPN_Model(BaseHeteroGNN):
         out_channels: int,
         num_heads: int,
         num_layers: int,
+        edge_dim: int,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -143,7 +172,6 @@ class RGAT_SPN_Model(BaseHeteroGNN):
 
     def _create_conv_layers(self) -> None:
         in_channels = self.hparams.in_channels_dict
-        # The output dimension of an RGAT layer is hidden_channels * num_heads
         layer_output_dim = self.hparams.hidden_channels * self.hparams.num_heads
 
         for i in range(self.hparams.num_layers):
@@ -161,10 +189,8 @@ class RGAT_SPN_Model(BaseHeteroGNN):
                 aggr="sum",
             )
             self.convs.append(conv)
-            # Update in_channels for the next layer
             in_channels = {key: layer_output_dim for key in in_channels.keys()}
 
-        # Define the final linear layers with the correct input dimension
         self.lin = ModuleDict({nt: Linear(layer_output_dim, self.hparams.out_channels) for nt in self.node_types})
 
 
@@ -174,7 +200,18 @@ class HEAT_SPN_Model(BaseHeteroGNN):
     """
 
     def __init__(
-        self, in_channels_dict: Dict[str, int], hidden_channels: int, out_channels: int, num_layers: int, **kwargs
+        self,
+        in_channels_dict: Dict[str, int],
+        hidden_channels: int,
+        out_channels: int,
+        num_layers: int,
+        num_heads: int,
+        edge_dim: int,
+        num_node_types: int,
+        num_edge_types: int,
+        node_type_emb_dim: int,
+        edge_type_emb_dim: int,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.save_hyperparameters()
@@ -182,7 +219,6 @@ class HEAT_SPN_Model(BaseHeteroGNN):
 
     def _create_conv_layers(self) -> None:
         in_channels = self.hparams.in_channels_dict
-        # The output dimension of a HEAT layer is just hidden_channels
         layer_output_dim = self.hparams.hidden_channels
 
         for i in range(self.hparams.num_layers):
@@ -203,8 +239,6 @@ class HEAT_SPN_Model(BaseHeteroGNN):
                 aggr="sum",
             )
             self.convs.append(conv)
-            # Update in_channels for the next layer
             in_channels = {key: layer_output_dim for key in in_channels.keys()}
 
-        # Define the final linear layers with the correct input dimension
         self.lin = ModuleDict({nt: Linear(layer_output_dim, self.hparams.out_channels) for nt in self.node_types})

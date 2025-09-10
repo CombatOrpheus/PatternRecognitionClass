@@ -54,7 +54,9 @@ def load_params_from_study(study_db_path: Path) -> dict:
 def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseGNN_SPN_Model:
     """Instantiates the model based on the provided arguments."""
     model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
-    model_class = model_classes.get(run_config.gnn_operator if run_config.gnn_operator == "mixed" else run_config.prediction_level)
+    model_class = model_classes.get(
+        run_config.gnn_operator if run_config.gnn_operator == "mixed" else run_config.prediction_level
+    )
 
     model_kwargs = vars(run_config).copy()
 
@@ -67,7 +69,9 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
     return model_class(node_features_dim=node_features_dim, out_channels=1, **filtered_kwargs)
 
 
-def run_single_training_run(run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule) -> tuple[str, dict]:
+def run_single_training_run(
+    run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule
+) -> tuple[str, dict]:
     """Trains one model instance and returns its artifact path and test results."""
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
@@ -95,13 +99,13 @@ def run_single_training_run(run_config: argparse.Namespace, run_id: int, data_mo
         raise FileNotFoundError("Best model checkpoint not found.")
 
     # --- Save model artifacts (state_dict and hparams) ---
-    artifact_dir = run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{run_id}_seed_{seed}"
+    artifact_dir = (
+        run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{run_id}_seed_{seed}"
+    )
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    state_dict_path = artifact_dir / "best_model.pt"
-    checkpoint = torch.load(best_model_path, map_location="cpu")
-    torch.save(checkpoint["state_dict"], state_dict_path)
-
+    # Instead of extracting the state_dict, we copy the whole checkpoint file for robust loading
+    Path(best_model_path).rename(artifact_dir / "best_model.ckpt")
     hparams_path = artifact_dir / "hparams.json"
     hparams_to_save = {k: v for k, v in vars(run_config).items() if isinstance(v, (str, int, float, bool))}
     with open(hparams_path, "w") as f:
@@ -113,7 +117,7 @@ def run_single_training_run(run_config: argparse.Namespace, run_id: int, data_mo
         {
             "run_id": run_id,
             "seed": seed,
-            "final_train_loss": trainer.callback_metrics.get("train/loss_epoch", torch.tensor(-1.0)).item(),
+            "final_train_loss": trainer.callback_metrics.get("train/loss_epoch"),
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
@@ -134,13 +138,19 @@ def main():
         study_params = load_params_from_study(study_path)
 
         # Create a copy of the config to avoid modification across loops
-        run_config = argparse.Namespace(**vars(config.io), **vars(config.model), **vars(config.training), **vars(config.optimization))
+        run_config = argparse.Namespace(
+            **vars(config.io), **vars(config.model), **vars(config.training), **vars(config.optimization)
+        )
         run_config.__dict__.update(study_params)
 
         print(f"\n--- Training Phase for operator: {run_config.gnn_operator} ---")
 
-        train_dataset = HomogeneousSPNDataset(str(run_config.root), str(run_config.raw_data_dir), str(run_config.train_file), run_config.label)
-        test_dataset = HomogeneousSPNDataset(str(run_config.root), str(run_config.raw_data_dir), str(run_config.test_file), run_config.label)
+        train_dataset = HomogeneousSPNDataset(
+            str(run_config.root), str(run_config.raw_data_dir), str(run_config.train_file), run_config.label
+        )
+        test_dataset = HomogeneousSPNDataset(
+            str(run_config.root), str(run_config.raw_data_dir), str(run_config.test_file), run_config.label
+        )
 
         data_module = SPNDataModule(
             train_data_list=list(train_dataset),
@@ -155,9 +165,11 @@ def main():
         total_params = sum(p.numel() for p in model_for_summary.parameters())
         trainable_params = sum(p.numel() for p in model_for_summary.parameters() if p.requires_grad)
 
-        for i in tqdm(range(run_args.num_runs), desc=f"Training {run_args.gnn_operator}"):
+        for i in tqdm(range(run_config.num_runs), desc=f"Training {run_config.gnn_operator}"):
             seed = BASE_SEED + i
-            artifact_dir_path = run_args.state_dict_dir / run_args.exp_name / f"{run_args.gnn_operator}_run_{i}_seed_{seed}"
+            artifact_dir_path = (
+                run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{i}_seed_{seed}"
+            )
 
             # Check if this run has already been completed
             hparams_path = artifact_dir_path / "hparams.json"
@@ -166,18 +178,22 @@ def main():
                     try:
                         existing_hparams = json.load(f)
                         current_hparams = {
-                            k: v for k, v in vars(run_args).items() if isinstance(v, (str, int, float, bool))
+                            k: v for k, v in vars(run_config).items() if isinstance(v, (str, int, float, bool))
                         }
 
                         if existing_hparams == current_hparams:
-                            tqdm.write(f"Skipping run {i} for {run_args.gnn_operator}: identical completed run found.")
+                            tqdm.write(
+                                f"Skipping run {i} for {run_config.gnn_operator}: identical completed run found."
+                            )
                             continue
                         else:
-                            tqdm.write(f"Re-running run {i} for {run_args.gnn_operator}: hyperparameters have changed.")
+                            tqdm.write(
+                                f"Re-running run {i} for {run_config.gnn_operator}: hyperparameters have changed."
+                            )
                     except json.JSONDecodeError:
-                        tqdm.write(f"Re-running run {i} for {run_args.gnn_operator}: corrupted hparams.json found.")
+                        tqdm.write(f"Re-running run {i} for {run_config.gnn_operator}: corrupted hparams.json found.")
 
-            artifact_dir, stats_result = run_single_training_run(run_args, i, data_module)
+            artifact_dir, stats_result = run_single_training_run(run_config, i, data_module)
 
             hparams_to_save = vars(run_config).copy()
             hparams_to_save.update({"total_parameters": total_params, "trainable_parameters": trainable_params})

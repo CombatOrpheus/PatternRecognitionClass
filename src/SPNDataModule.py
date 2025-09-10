@@ -30,6 +30,7 @@ class SPNDataModule(pl.LightningDataModule):
         test_data_list: Optional[List[Union[Data, HeteroData]]] = None,
         heterogeneous: bool = False,
         batch_size: int = 32,
+        label_scaler: Optional[StandardScaler] = None,
         num_workers: int = 0,
         val_split: float = 0.2,
     ):
@@ -42,7 +43,7 @@ class SPNDataModule(pl.LightningDataModule):
         self.train_dataset: Optional[Subset] = None
         self.val_dataset: Optional[Subset] = None
         self.test_dataset: Optional[Dataset] = None
-        self.label_scaler: Optional[StandardScaler] = None
+        self.label_scaler: Optional[StandardScaler] = label_scaler
         self._num_node_features: Union[int, Dict[str, int]] = 0
         self._num_edge_features: Union[int, Dict[str, int]] = 0
         self._num_node_types: int = 0
@@ -62,13 +63,14 @@ class SPNDataModule(pl.LightningDataModule):
                     self.train_dataset = self.train_data_list
                     self.val_dataset = self.val_data_list
 
-                # Fit scaler ONLY on the training split
-                print("Fitting label scaler...")
-                if self.hparams.heterogeneous:
-                    labels = torch.cat([data["place"].y for data in self.train_dataset]).numpy().reshape(-1, 1)
-                else:
-                    labels = torch.cat([data.y for data in self.train_dataset]).numpy().reshape(-1, 1)
-                self.label_scaler = StandardScaler().fit(labels)
+                # Fit scaler ONLY on the training split if it's not already provided
+                if self.label_scaler is None:
+                    print("Fitting label scaler...")
+                    if self.hparams.heterogeneous:
+                        labels = torch.cat([data["place"].y for data in self.train_dataset]).numpy().reshape(-1, 1)
+                    else:
+                        labels = torch.cat([data.y for data in self.train_dataset]).numpy().reshape(-1, 1)
+                    self.label_scaler = StandardScaler().fit(labels)
 
                 self._scale_dataset(self.train_dataset)
                 self._scale_dataset(self.val_dataset)

@@ -10,9 +10,7 @@ import seaborn as sns
 from src.config_utils import load_config
 
 
-def analyze_and_plot_results(
-    stats_results_file: Path, cross_eval_results_file: Path, output_dir: Path, metric: str = "test/rmse"
-):
+def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: Path, output_dir: Path, metric: str):
     """
     Loads all experimental results, performs statistical analysis, and generates
     a comprehensive set of summary tables and plots.
@@ -114,10 +112,29 @@ def analyze_and_plot_results(
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Analyze and plot model performance results.")
+    # Add the --config argument so it can be parsed by load_config
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default="configs/default_config.toml",
+        help="Path to the TOML configuration file.",
+    )
+    parser.add_argument(
+        "--metric",
+        type=str,
+        default="test/rmse",
+        help="The metric to use for analysis (e.g., 'test/rmse', 'test/mae').",
+    )
+    # Parse only the known args for this script, allowing load_config to handle the rest
+    args, _ = parser.parse_known_args()
+
     config = load_config()
 
     analyze_and_plot_results(
         stats_results_file=config.io.stats_results_file,
         cross_eval_results_file=config.io.cross_eval_results_file,
         output_dir=config.io.output_dir,
+        metric=args.metric,
     )

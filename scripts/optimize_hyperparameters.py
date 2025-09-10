@@ -8,6 +8,8 @@ import torch
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from optuna.integration import PyTorchLightningPruningCallback
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import random_split
 from tqdm import tqdm
 
 from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model, MixedGNN_SPN_Model
@@ -19,7 +21,13 @@ from src.config_utils import load_config
 pl.seed_everything(42, workers=True)
 
 
-def objective(trial: optuna.Trial, config: argparse.Namespace, train_data: HomogeneousSPNDataset) -> float:
+def objective(
+    trial: optuna.Trial,
+    config: argparse.Namespace,
+    train_dataset: HomogeneousSPNDataset,
+    val_dataset: HomogeneousSPNDataset,
+    label_scaler: StandardScaler,
+) -> float:
     """The Optuna objective function."""
     gnn_operator = config.gnn_operator
     hyperparams = {
@@ -40,13 +48,14 @@ def objective(trial: optuna.Trial, config: argparse.Namespace, train_data: Homog
         hyperparams["gnn_alpha"] = trial.suggest_float("gnn_alpha", 0.05, 0.5) if gnn_operator == "ssg" else 0.1
 
     data_module = SPNDataModule(
-        train_data_list=list(train_data),  # Pass the pre-loaded data
+        train_data_list=train_dataset,
+        val_data_list=val_dataset,
         label_to_predict=config.label,
         batch_size=hyperparams["batch_size"],
         num_workers=config.num_workers,
-        val_split=config.val_split,
+        label_scaler=label_scaler,
     )
-    data_module.setup("fit")
+    data_module.setup("fit")  # This will now use the pre-fitted scaler
 
     model_params = hyperparams.copy()
     model_params.pop("batch_size")
@@ -114,12 +123,23 @@ def main():
         raw_file_name=str(config.io.train_file),
         label_to_predict=config.model.label,
     )
+
+    # Perform train/val split and fit scaler ONCE before the loop
+    train_size = int(len(train_dataset) * (1 - config.training.val_split))
+    val_size = len(train_dataset) - train_size
+    train_split, val_split = random_split(list(train_dataset), [train_size, val_size])
+
+    labels = torch.cat([data.y for data in train_split]).numpy().reshape(-1, 1)
+    label_scaler = StandardScaler().fit(labels)
+
     print("Data loaded successfully.")
 
     for gnn_operator in tqdm(operators_to_run, desc="Total Optimization Progress"):
         # Create a copy of the config to avoid modification across loops
         run_config = argparse.Namespace(**vars(config.io), **vars(config.model), **vars(config.training), **vars(config.optimization))
         run_config.gnn_operator = gnn_operator
+        if gnn_operator == "mixed":
+            run_config.prediction_level = "graph"
         study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
         storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
 
@@ -138,7 +158,7 @@ def main():
                 study.set_user_attr(key, value)
 
         study.optimize(
-            lambda trial: objective(trial, run_config, train_dataset),
+            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler),
             n_trials=run_config.n_trials,
             timeout=run_config.timeout,
             show_progress_bar=False,

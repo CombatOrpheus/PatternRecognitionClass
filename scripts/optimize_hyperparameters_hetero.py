@@ -1,8 +1,4 @@
 import argparse
-import shutil
-import tempfile
-import typing
-from pathlib import Path
 from typing import List, Tuple
 
 import lightning.pytorch as pl
@@ -11,53 +7,25 @@ import torch
 from lightning.pytorch.callbacks import EarlyStopping, TQDMProgressBar
 from lightning.pytorch.loggers import TensorBoardLogger
 from optuna.integration import PyTorchLightningPruningCallback
+from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import HeteroData
 from tqdm import tqdm
 
 from src.HeterogeneousModels import RGAT_SPN_Model, HEAT_SPN_Model
-from src.PetriNets import load_spn_data_from_files, SPNAnalysisResultLabel
 from src.SPNDataModule import SPNDataModule
+from src.SPNDatasets import HeterogeneousSPNDataset
 from src.config_utils import load_config
 
 # Set a seed for reproducibility of data splits
 pl.seed_everything(42, workers=True)
 
 
-def prepare_and_cache_data(config: argparse.Namespace) -> Tuple[List[HeteroData], List[HeteroData], str]:
-    """
-    Loads, processes, and caches the training and validation data in heterogeneous format.
-    """
-    print("--- Preparing and Caching Heterogeneous Data ---")
-    cache_dir = tempfile.mkdtemp()
-    print(f"Cache directory created at: {cache_dir}")
-
-    raw_train_data = load_spn_data_from_files(config.train_file)
-    raw_val_data = load_spn_data_from_files(config.val_file)
-
-    # Use SPNDataModule to process the data once in heterogeneous mode
-    temp_dm = SPNDataModule(
-        label_to_predict=config.label,
-        train_data_list=raw_train_data,
-        val_data_list=raw_val_data,
-        batch_size=128,  # Placeholder, not used for processing
-        heterogeneous=True,
-    )
-    temp_dm.setup("fit")
-
-    train_cache_path = Path(cache_dir) / "train_data.pt"
-    val_cache_path = Path(cache_dir) / "val_data.pt"
-    torch.save(temp_dm.train_data, train_cache_path)
-    torch.save(temp_dm.val_data, val_cache_path)
-    print("Processed heterogeneous data has been cached.")
-
-    return temp_dm.train_data, temp_dm.val_data, cache_dir
-
-
 def objective(
     trial: optuna.Trial,
     config: argparse.Namespace,
-    processed_train_data: List[HeteroData],
-    processed_val_data: List[HeteroData],
+    train_dataset: HeterogeneousSPNDataset,
+    val_dataset: HeterogeneousSPNDataset,
+    label_scaler: StandardScaler,
 ) -> float:
     """The Optuna objective function for heterogeneous models."""
     gnn_operator = config.gnn_operator
@@ -73,14 +41,14 @@ def objective(
 
     data_module = SPNDataModule(
         label_to_predict=config.label,
-        train_data_list=[],
-        val_data_list=[],
+        train_data_list=list(train_dataset),
+        val_data_list=list(val_dataset),
         batch_size=hyperparams["batch_size"],
         num_workers=config.num_workers,
         heterogeneous=True,
+        label_scaler=label_scaler,
     )
-    data_module.train_data = processed_train_data
-    data_module.val_data = processed_val_data
+    data_module.setup("fit")
 
     if gnn_operator == "rgat":
         model = RGAT_SPN_Model(
@@ -149,51 +117,55 @@ def main():
 
     operators_to_run = ["rgat", "heat"] if config.hetero_optimization.all_operators else [config.hetero_model.gnn_operator]
 
-    cache_dir = None
-    try:
-        # Create a combined config for prepare_and_cache_data
-        data_config = argparse.Namespace(**vars(config.io), **vars(config.model))
-        processed_train_data, processed_val_data, cache_dir = prepare_and_cache_data(data_config)
+    print("--- Pre-loading and processing data ---")
+    # These will load from cache if available, or process and cache if not.
+    train_dataset = HeterogeneousSPNDataset(
+        root=config.io.root, raw_data_dir=config.io.raw_data_dir, raw_file_name=config.io.train_file, label_to_predict=config.model.label
+    )
+    val_dataset = HeterogeneousSPNDataset(
+        root=config.io.root, raw_data_dir=config.io.raw_data_dir, raw_file_name=config.io.val_file, label_to_predict=config.model.label
+    )
 
-        for gnn_operator in tqdm(operators_to_run, desc="Optimizing Operators"):
-            run_config = argparse.Namespace(**vars(config.io), **vars(config.hetero_model), **vars(config.hetero_training), **vars(config.hetero_optimization))
-            run_config.gnn_operator = gnn_operator
+    # Fit the scaler once
+    labels = torch.cat([data["place"].y for data in train_dataset]).numpy().reshape(-1, 1)
+    label_scaler = StandardScaler().fit(labels)
+    print("Data loaded and scaler fitted successfully.")
 
-            study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
-            storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
+    for gnn_operator in tqdm(operators_to_run, desc="Optimizing Operators"):
+        run_config = argparse.Namespace(
+            **vars(config.io), **vars(config.model), **vars(config.hetero_training), **vars(config.hetero_optimization)
+        )
+        run_config.gnn_operator = gnn_operator
 
-            study = optuna.create_study(
-                study_name=study_name,
-                storage=storage_name,
-                direction="minimize",
-                pruner=optuna.pruners.MedianPruner(),
-                load_if_exists=True,
-            )
-            study.set_user_attr("label", run_config.label)
-            study.set_user_attr("gnn_operator", run_config.gnn_operator)
+        study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
+        storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
 
-            print(f"\n--- Starting Optuna study '{study_name}' for operator '{run_config.gnn_operator}' ---")
-            study.optimize(
-                lambda trial: objective(trial, run_config, processed_train_data, processed_val_data),
-                n_trials=run_config.n_trials,
-                timeout=run_config.timeout,
-                n_jobs=1,
-            )
+        study = optuna.create_study(
+            study_name=study_name,
+            storage=storage_name,
+            direction="minimize",
+            pruner=optuna.pruners.MedianPruner(),
+            load_if_exists=True,
+        )
+        study.set_user_attr("label", str(run_config.label))
+        study.set_user_attr("gnn_operator", run_config.gnn_operator)
 
-            print(f"\n--- Optimization Finished for operator '{run_config.gnn_operator}' ---")
-            print("Best trial:")
-            best_trial = study.best_trial
-            print(f"  Value (val/loss): {best_trial.value}")
-            print("  Params: ")
-            for key, value in best_trial.params.items():
-                print(f"    {key}: {value}")
-            print("-" * 80)
+        print(f"\n--- Starting Optuna study '{study_name}' for operator '{run_config.gnn_operator}' ---")
+        study.optimize(
+            lambda trial: objective(trial, run_config, train_dataset, val_dataset, label_scaler),
+            n_trials=run_config.n_trials,
+            timeout=run_config.timeout,
+            n_jobs=1,
+        )
 
-    finally:
-        if cache_dir:
-            print(f"\n--- Cleaning up cache directory: {cache_dir} ---")
-            shutil.rmtree(cache_dir)
-            print("Cache cleaned up successfully.")
+        print(f"\n--- Optimization Finished for operator '{run_config.gnn_operator}' ---")
+        print("Best trial:")
+        best_trial = study.best_trial
+        print(f"  Value (val/loss): {best_trial.value}")
+        print("  Params: ")
+        for key, value in best_trial.params.items():
+            print(f"    {key}: {value}")
+        print("-" * 80)
 
     print("\n--- All optimization studies finished. ---")
 

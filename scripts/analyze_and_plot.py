@@ -52,7 +52,7 @@ def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: 
         print(f"\nFriedman Test on '{metric}': statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
         if p_value < 0.05:
             posthoc_results = sp.posthoc_conover_friedman(
-                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator"
+                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator", block_id_col="run_id"
             )
 
             # Critical Difference Diagram
@@ -113,24 +113,31 @@ def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze and plot model performance results.")
-    # Add the --config argument so it can be parsed by load_config
-    parser.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        default="configs/default_config.toml",
-        help="Path to the TOML configuration file.",
-    )
     parser.add_argument(
         "--metric",
         type=str,
         default="test/rmse",
         help="The metric to use for analysis (e.g., 'test/rmse', 'test/mae').",
     )
-    # Parse only the known args for this script, allowing load_config to handle the rest
-    args, _ = parser.parse_known_args()
+    parser.add_argument(
+        "--list-metrics", action="store_true", help="List all available metrics from the results file and exit."
+    )
 
-    config = load_config()
+    # Parse the script-specific arguments first.
+    # The remaining arguments (like --config) will be handled by load_config.
+    args, unknown_args = parser.parse_known_args()
+
+    # Pass only the unknown args to the config loader.
+    config = load_config(unknown_args)
+
+    if args.list_metrics:
+        df = pd.read_parquet(config.io.stats_results_file)
+        metrics = sorted([col for col in df.columns if "/" in col and ("test/" in col or "val/" in col)])
+        print("Available metrics:")
+        for m in metrics:
+            print(f"  - {m}")
+        # Exit after listing metrics
+        exit()
 
     analyze_and_plot_results(
         stats_results_file=config.io.stats_results_file,

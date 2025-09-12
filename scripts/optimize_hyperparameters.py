@@ -24,12 +24,18 @@ logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.ERRO
 logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.ERROR)
 
 
+def get_dataset_base_name(file_name: str) -> str:
+    """Extracts the base name from a dataset file name."""
+    return "_".join(Path(file_name).stem.split("_")[:2])
+
+
 def objective(
     trial: optuna.Trial,
     config: argparse.Namespace,
     train_dataset: HomogeneousSPNDataset,
     val_dataset: HomogeneousSPNDataset,
     label_scaler: StandardScaler,
+    study_name: str,
 ) -> float:
     """The Optuna objective function."""
     gnn_operator = config.gnn_operator
@@ -86,9 +92,7 @@ def objective(
             **model_params,
         )
 
-    logger = TensorBoardLogger(
-        save_dir="optuna_logs", name=f"{config.study_name}_{gnn_operator}", version=f"trial_{trial.number}"
-    )
+    logger = TensorBoardLogger(save_dir="optuna_logs", name=study_name, version=f"trial_{trial.number}")
     trainer = pl.Trainer(
         max_epochs=config.max_epochs,
         accelerator="auto",
@@ -117,11 +121,7 @@ def main():
     config, config_path = load_config()
 
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
-    operators_to_run = (
-        ["gcn", "tag", "cheb", "sgc", "ssg", "mixed"]
-        if config.optimization.all_operators
-        else [config.model.gnn_operator]
-    )
+    operators_to_run = config.model.gnn_operator
 
     print("--- Pre-loading and processing data ---")
     train_dataset = HomogeneousSPNDataset(
@@ -141,6 +141,10 @@ def main():
 
     print("Data loaded successfully.")
 
+    train_base_name = get_dataset_base_name(str(config.io.train_file))
+    test_base_name = get_dataset_base_name(str(config.io.test_file))
+    label_name = config.model.label
+
     for gnn_operator in tqdm(operators_to_run, desc="Total Optimization Progress"):
         # Create a copy of the config to avoid modification across loops
         run_config = argparse.Namespace(
@@ -149,7 +153,7 @@ def main():
         run_config.gnn_operator = gnn_operator
         if gnn_operator == "mixed":
             run_config.prediction_level = "graph"
-        study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
+        study_name = f"{train_base_name}-{test_base_name}-{label_name}-{gnn_operator}"
         storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
 
         # --- Save config for reproducibility ---
@@ -174,7 +178,7 @@ def main():
                 study.set_user_attr(key, value)
 
         study.optimize(
-            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler),
+            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler, study_name),
             n_trials=run_config.n_trials,
             timeout=run_config.timeout,
             show_progress_bar=False,

@@ -128,7 +128,7 @@ if __name__ == "__main__":
     args, unknown_args = parser.parse_known_args()
 
     # Pass only the unknown args to the config loader.
-    config = load_config(unknown_args)
+    config, _ = load_config(unknown_args)
 
     if args.list_metrics:
         df = pd.read_parquet(config.io.stats_results_file)

@@ -16,7 +16,7 @@ def _add_args_from_config(parser, config_dict, parent_key=""):
             parser.add_argument(f"--{full_key}", type=type(value), default=value)
 
 
-def load_config(cli_args: list = None) -> argparse.Namespace:
+def load_config(cli_args: list = None) -> tuple[argparse.Namespace, Path]:
     """
     Loads configuration from a TOML file, allows overriding with command-line arguments,
     and converts all parameters in the 'io' section to pathlib.Path objects.
@@ -57,4 +57,4 @@ def load_config(cli_args: list = None) -> argparse.Namespace:
         new_io_dict = {k: Path(v) if isinstance(v, str) else v for k, v in io_dict.items()}
         config_ns.io = argparse.Namespace(**new_io_dict)
 
-    return config_ns
+    return config_ns, config_path

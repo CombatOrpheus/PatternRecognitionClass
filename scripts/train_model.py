@@ -1,5 +1,4 @@
 import argparse
-import json
 from pathlib import Path
 from typing import List
 
@@ -55,7 +54,7 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
     """Instantiates the model based on the provided arguments."""
     model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
     model_class = model_classes.get(
-        run_config.gnn_operator if run_config.gnn_operator == "mixed" else run_config.prediction_level
+        run_config.gnn_operator_name if run_config.gnn_operator_name == "mixed" else run_config.prediction_level
     )
 
     model_kwargs = vars(run_config).copy()
@@ -79,7 +78,9 @@ def run_single_training_run(
     model = setup_model(run_config, data_module.num_node_features)
 
     logger = pl.loggers.TensorBoardLogger(
-        save_dir=str(run_config.log_dir), name=run_config.exp_name, version=f"{run_config.gnn_operator}_run_{run_id}"
+        save_dir=str(run_config.log_dir),
+        name=run_config.exp_name,
+        version=f"{run_config.gnn_operator_name}_run_{run_id}",
     )
     checkpoint_callback = ModelCheckpoint(monitor="val/loss", mode="min", filename="best")
 
@@ -94,25 +95,21 @@ def run_single_training_run(
     )
     trainer.fit(model, datamodule=data_module)
 
-    best_model_path = trainer.checkpoint_callback.best_model_path
-    if not best_model_path:
+    best_ckpt_path = trainer.checkpoint_callback.best_model_path
+    if not best_ckpt_path or not Path(best_ckpt_path).exists():
         raise FileNotFoundError("Best model checkpoint not found.")
 
-    # --- Save model artifacts (state_dict and hparams) ---
+    # --- Save model artifacts (checkpoint and hparams) ---
     artifact_dir = (
-        run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{run_id}_seed_{seed}"
+        run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     # Instead of extracting the state_dict, we copy the whole checkpoint file for robust loading
-    Path(best_model_path).rename(artifact_dir / "best_model.ckpt")
-    hparams_path = artifact_dir / "hparams.json"
-    hparams_to_save = {k: v for k, v in vars(run_config).items() if isinstance(v, (str, int, float, bool))}
-    with open(hparams_path, "w") as f:
-        json.dump(hparams_to_save, f, indent=4)
-    # ---
+    final_ckpt_path = artifact_dir / "best_model.ckpt"
+    Path(best_ckpt_path).rename(final_ckpt_path)
 
-    results = trainer.test(ckpt_path=best_model_path, datamodule=data_module, verbose=False)[0]
+    results = trainer.test(ckpt_path=final_ckpt_path, datamodule=data_module, verbose=False)[0]
     results.update(
         {
             "run_id": run_id,
@@ -126,7 +123,7 @@ def run_single_training_run(
 
 def main():
     """Main function to orchestrate the entire experiment workflow."""
-    config = load_config()
+    config, _ = load_config()
 
     selected_studies = select_studies(config.io.studies_dir)
     if not selected_studies:
@@ -143,7 +140,10 @@ def main():
         )
         run_config.__dict__.update(study_params)
 
-        print(f"\n--- Training Phase for operator: {run_config.gnn_operator} ---")
+        # Rename for consistency with model's __init__
+        run_config.gnn_operator_name = run_config.gnn_operator
+
+        print(f"\n--- Training Phase for operator: {run_config.gnn_operator_name} ---")
 
         train_dataset = HomogeneousSPNDataset(
             str(run_config.root), str(run_config.raw_data_dir), str(run_config.train_file), run_config.label
@@ -165,33 +165,16 @@ def main():
         total_params = sum(p.numel() for p in model_for_summary.parameters())
         trainable_params = sum(p.numel() for p in model_for_summary.parameters() if p.requires_grad)
 
-        for i in tqdm(range(run_config.num_runs), desc=f"Training {run_config.gnn_operator}"):
+        for i in tqdm(range(run_config.num_runs), desc=f"Training {run_config.gnn_operator_name}"):
             seed = BASE_SEED + i
             artifact_dir_path = (
-                run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{i}_seed_{seed}"
+                run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator_name}_run_{i}_seed_{seed}"
             )
 
             # Check if this run has already been completed
-            hparams_path = artifact_dir_path / "hparams.json"
-            if artifact_dir_path.exists() and (artifact_dir_path / "best_model.pt").exists() and hparams_path.exists():
-                with open(hparams_path, "r") as f:
-                    try:
-                        existing_hparams = json.load(f)
-                        current_hparams = {
-                            k: v for k, v in vars(run_config).items() if isinstance(v, (str, int, float, bool))
-                        }
-
-                        if existing_hparams == current_hparams:
-                            tqdm.write(
-                                f"Skipping run {i} for {run_config.gnn_operator}: identical completed run found."
-                            )
-                            continue
-                        else:
-                            tqdm.write(
-                                f"Re-running run {i} for {run_config.gnn_operator}: hyperparameters have changed."
-                            )
-                    except json.JSONDecodeError:
-                        tqdm.write(f"Re-running run {i} for {run_config.gnn_operator}: corrupted hparams.json found.")
+            if (artifact_dir_path / "best_model.ckpt").exists():
+                tqdm.write(f"Skipping run {i} for {run_config.gnn_operator_name}: completed run found.")
+                continue
 
             artifact_dir, stats_result = run_single_training_run(run_config, i, data_module)
 

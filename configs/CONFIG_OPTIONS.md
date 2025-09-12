@@ -30,12 +30,6 @@ This section contains all parameters related to file paths and experiment naming
   - Default: `"lightning_logs"`
 - `exp_name`: The name of the experiment.
   - Default: `"gnn_spn_experiment"`
-- `experiment_dir`: The path to the main experiment log directory for testing models.
-  - Default: `"lightning_logs/gnn_spn_experiment"`
-- `data_dir`: The directory containing the `.processed` test files for the test script.
-  - Default: `"../Data"`
-- `output_file`: The path to the output Parquet file for the test script results.
-  - Default: `"../results/cross_dataset_evaluation.parquet"`
 
 ## `[model]` - Homogeneous Model Configuration
 

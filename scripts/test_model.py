@@ -174,7 +174,7 @@ from src.config_utils import load_config
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    config = load_config()
+    config, _ = load_config()
 
     evaluate_experiment_on_directory(
         experiment_dir=config.io.experiment_dir,

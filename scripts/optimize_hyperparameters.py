@@ -1,6 +1,7 @@
 import argparse
-from pathlib import Path
+import logging
 import shutil
+from pathlib import Path
 
 import lightning.pytorch as pl
 import optuna
@@ -18,6 +19,9 @@ from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
 
 pl.seed_everything(42, workers=True)
+# Suppress verbose hardware information from PyTorch Lightning
+logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.ERROR)
+logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.ERROR)
 
 
 def objective(
@@ -91,7 +95,7 @@ def objective(
         devices="auto",
         logger=logger,
         callbacks=[
-            EarlyStopping(monitor="val/loss", patience=config.patience, mode="min"),
+            EarlyStopping(monitor="val/loss", patience=config.patience, mode="min", verbose=False),
             PyTorchLightningPruningCallback(trial, monitor="val/loss"),
         ],
         enable_model_summary=False,
@@ -110,7 +114,7 @@ def objective(
 
 def main():
     """Main function to run the hyperparameter optimization study."""
-    config = load_config()
+    config, config_path = load_config()
 
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
     operators_to_run = (
@@ -152,7 +156,7 @@ def main():
         config_save_path = run_config.studies_dir / f"{study_name}_config.yaml"
         if not config_save_path.exists():
             # Assuming load_config() returns an object with a 'config_path' attribute
-            shutil.copy(config.config_path, config_save_path)
+            shutil.copy(config_path, config_save_path)
             print(f"Saved configuration for '{study_name}' to {config_save_path}")
 
         study = optuna.create_study(

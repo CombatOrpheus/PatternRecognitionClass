@@ -1,4 +1,6 @@
 import argparse
+import logging
+import shutil
 from typing import List, Tuple
 
 import lightning.pytorch as pl
@@ -18,6 +20,9 @@ from src.config_utils import load_config
 
 # Set a seed for reproducibility of data splits
 pl.seed_everything(42, workers=True)
+# Suppress verbose hardware information from PyTorch Lightning
+logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.ERROR)
+logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.ERROR)
 
 
 def objective(
@@ -88,14 +93,14 @@ def objective(
         save_dir="../optuna_logs", name=f"{config.study_name}_{gnn_operator}", version=f"trial_{trial.number}"
     )
     pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val/loss")
-    early_stop_callback = EarlyStopping(monitor="val_loss", patience=config.patience, verbose=False, mode="min")
+    early_stop_callback = EarlyStopping(monitor="val/loss", patience=config.patience, verbose=False, mode="min")
 
     trainer = pl.Trainer(
         max_epochs=config.max_epochs,
         accelerator="auto",
         devices="auto",
         logger=logger,
-        callbacks=[early_stop_callback, pruning_callback, TQDMProgressBar(refresh_rate=10)],
+        callbacks=[early_stop_callback, pruning_callback, TQDMProgressBar(refresh_rate=20)],
         enable_model_summary=False,
         log_every_n_steps=5,
     )
@@ -111,7 +116,7 @@ def objective(
 
 def main():
     """Main function to run the optimization study."""
-    config = load_config()
+    config, config_path = load_config()
 
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
 
@@ -139,6 +144,12 @@ def main():
 
         study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
         storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
+
+        # --- Save config for reproducibility ---
+        config_save_path = run_config.studies_dir / f"{study_name}_config.yaml"
+        if not config_save_path.exists():
+            shutil.copy(config_path, config_save_path)
+            print(f"Saved configuration for '{study_name}' to {config_save_path}")
 
         study = optuna.create_study(
             study_name=study_name,

@@ -174,7 +174,7 @@ def main():
         # Create a dictionary from the run_config namespace for user attributes
         user_attrs = vars(run_config)
         for key, value in user_attrs.items():
-            if not isinstance(value, Path):
+            if not isinstance(value, (Path, argparse.Namespace)):
                 study.set_user_attr(key, value)
 
         study.optimize(

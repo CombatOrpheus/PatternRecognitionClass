@@ -41,8 +41,8 @@ This section contains parameters for the homogeneous GNN models.
 - `prediction_level`: The prediction level, either "node" or "graph".
   - Default: `"graph"`
   - Choices: `["node", "graph"]`
-- `gnn_operator`: The GNN operator to use.
-  - Default: `"gcn"`
+- `gnn_operator`: A list of GNN operators to use for optimization and training.
+  - Default: `["gcn"]`
   - Choices: `["gcn", "tag", "cheb", "sgc", "ssg", "mixed"]`
 
 ## `[training]` - Homogeneous Model Training
@@ -64,14 +64,10 @@ This section contains parameters for training the homogeneous GNN models.
 
 This section contains parameters for hyperparameter optimization of the homogeneous GNN models.
 
-- `all_operators`: If `true`, runs optimization for all operators.
-  - Default: `false`
 - `n_trials`: The number of optimization trials.
   - Default: `100`
 - `timeout`: The timeout for the study in seconds.
   - Default: `7200`
-- `study_name`: The base name for the Optuna study.
-  - Default: `"gnn_spn_optimization"`
 
 ## `[hetero_model]` - Heterogeneous Model Configuration
 

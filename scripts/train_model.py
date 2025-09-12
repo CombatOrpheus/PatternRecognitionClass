@@ -19,28 +19,9 @@ BASE_SEED = 42
 pl.seed_everything(BASE_SEED, workers=True)
 
 
-def select_studies(studies_dir: Path) -> List[Path]:
-    """Scans for and allows user to select Optuna studies to run."""
-    db_files = sorted(list(studies_dir.glob("*.db")))
-    if not db_files:
-        print(f"No Optuna study (.db) files found in '{studies_dir}'.")
-        return []
-
-    print("\nAvailable studies found:")
-    for i, db_path in enumerate(db_files):
-        print(f"  [{i + 1}] {db_path.name}")
-
-    while True:
-        try:
-            selection = input("Enter study numbers to run (e.g., 1,3 or 'all'): ")
-            if selection.lower() == "all":
-                return db_files
-            selected_indices = [int(i.strip()) - 1 for i in selection.split(",")]
-            if all(0 <= i < len(db_files) for i in selected_indices):
-                return [db_files[i] for i in selected_indices]
-            print("Error: Selection out of range.")
-        except ValueError:
-            print("Invalid input.")
+def get_dataset_base_name(file_name: str) -> str:
+    """Extracts the base name from a dataset file name."""
+    return "_".join(Path(file_name).stem.split("_")[:2])
 
 
 def load_params_from_study(study_db_path: Path) -> dict:
@@ -125,9 +106,32 @@ def main():
     """Main function to orchestrate the entire experiment workflow."""
     config, _ = load_config()
 
-    selected_studies = select_studies(config.io.studies_dir)
+    studies_dir = config.io.studies_dir
+
+    # Construct the search pattern based on the current configuration
+    train_base = get_dataset_base_name(str(config.io.train_file))
+    test_base = get_dataset_base_name(str(config.io.test_file))
+    label = config.model.label
+    search_pattern = f"{train_base}-{test_base}-{label}-*.db"
+
+    # Find all studies matching the pattern
+    all_matching_studies = sorted(list(studies_dir.glob(search_pattern)))
+
+    # Filter studies to only include those with operators specified in the config
+    selected_studies = [
+        study_path
+        for study_path in all_matching_studies
+        if study_path.stem.split("-")[-1] in config.model.gnn_operator
+    ]
+
     if not selected_studies:
+        print(f"No Optuna studies found matching the current configuration in '{studies_dir}'.")
+        print(f"  (Searched for pattern: '{search_pattern}' with operators: {config.model.gnn_operator})")
         return
+
+    print("\nFound and training the following studies:")
+    for study_path in selected_studies:
+        print(f"  - {study_path.name}")
 
     all_stats_results = []
 

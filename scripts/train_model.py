@@ -50,7 +50,7 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
 
 
 def run_single_training_run(
-    run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule
+    run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule, exp_name: str
 ) -> tuple[str, dict]:
     """Trains one model instance and returns its artifact path and test results."""
     seed = BASE_SEED + run_id
@@ -60,7 +60,7 @@ def run_single_training_run(
 
     logger = pl.loggers.TensorBoardLogger(
         save_dir=str(run_config.log_dir),
-        name=run_config.exp_name,
+        name=exp_name,
         version=f"{run_config.gnn_operator_name}_run_{run_id}",
     )
     checkpoint_callback = ModelCheckpoint(monitor="val/loss", mode="min", filename="best")
@@ -82,7 +82,7 @@ def run_single_training_run(
 
     # --- Save model artifacts (checkpoint and hparams) ---
     artifact_dir = (
-        run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
+        run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -112,7 +112,8 @@ def main():
     train_base = get_dataset_base_name(str(config.io.train_file))
     test_base = get_dataset_base_name(str(config.io.test_file))
     label = config.model.label
-    search_pattern = f"{train_base}-{test_base}-{label}-*.db"
+    exp_name = f"{train_base}-{test_base}-{label}"
+    search_pattern = f"{exp_name}-*.db"
 
     # Find all studies matching the pattern
     all_matching_studies = sorted(list(studies_dir.glob(search_pattern)))
@@ -172,7 +173,7 @@ def main():
         for i in tqdm(range(run_config.num_runs), desc=f"Training {run_config.gnn_operator_name}"):
             seed = BASE_SEED + i
             artifact_dir_path = (
-                run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator_name}_run_{i}_seed_{seed}"
+                run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{i}_seed_{seed}"
             )
 
             # Check if this run has already been completed
@@ -180,7 +181,7 @@ def main():
                 tqdm.write(f"Skipping run {i} for {run_config.gnn_operator_name}: completed run found.")
                 continue
 
-            artifact_dir, stats_result = run_single_training_run(run_config, i, data_module)
+            artifact_dir, stats_result = run_single_training_run(run_config, i, data_module, exp_name)
 
             hparams_to_save = vars(run_config).copy()
             hparams_to_save.update({"total_parameters": total_params, "trainable_parameters": trainable_params})

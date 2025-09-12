@@ -28,8 +28,6 @@ This section contains all parameters related to file paths and experiment naming
   - Default: `"results/analysis_plots"`
 - `log_dir`: The directory to save Lightning logs.
   - Default: `"lightning_logs"`
-- `exp_name`: The name of the experiment.
-  - Default: `"gnn_spn_experiment"`
 
 ## `[model]` - Homogeneous Model Configuration
 

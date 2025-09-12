@@ -12,7 +12,6 @@ stats_results_file = "results/statistical_results.parquet"
 cross_eval_results_file = "results/cross_dataset_evaluation.parquet"
 output_dir = "results/analysis_plots"
 log_dir = "lightning_logs"
-exp_name = "GridDS1-GridDS3-average_tokens_per_place"
 
 [model]
 label = "average_tokens_per_place"

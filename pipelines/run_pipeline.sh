@@ -3,11 +3,12 @@
 # ===================================================================================
 # Pipeline Script for Homogeneous GNN SPN Experiments
 # This script orchestrates the entire workflow:
-# 1. Runs hyperparameter optimization for homogeneous models.
-# 2. Kicks off the final model training and evaluation process.
-#    (Note: This step requires user interaction to select studies).
+# 1. Runs hyperparameter optimization based on the operators listed in the config.
+# 2. Kicks off final model training and evaluation for the same operators.
 # 3. Runs cross-validation on the trained models against all datasets.
 # 4. Generates final analysis plots and statistical summaries.
+#
+# The entire pipeline is non-interactive and driven by the specified config file.
 #
 # Usage:
 #   bash pipelines/run_pipeline.sh [path/to/config.toml]
@@ -31,7 +32,7 @@ echo "--- Homogeneous Optimization Complete ---"
 
 # --- Step 2: Train Final Models ---
 echo -e "\n\n--- STEP 2: Starting Final Model Training ---"
-echo "The following script will prompt you to select which optimized studies to use for final training."
+echo "The following script will automatically find and train the studies matching the config."
 uv run python -m scripts.train_model --config "$CONFIG_FILE"
 echo "--- Final Model Training Complete ---"
 

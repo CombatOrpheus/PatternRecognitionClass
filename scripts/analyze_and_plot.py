@@ -10,6 +10,11 @@ import seaborn as sns
 from src.config_utils import load_config
 
 
+def get_dataset_base_name(file_name: str) -> str:
+    """Extracts the base name from a dataset file name."""
+    return "_".join(Path(file_name).stem.split("_")[:2])
+
+
 def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: Path, output_dir: Path, metric: str):
     """
     Loads all experimental results, performs statistical analysis, and generates
@@ -130,8 +135,15 @@ if __name__ == "__main__":
     # Pass only the unknown args to the config loader.
     config, _ = load_config(unknown_args)
 
+    # Define experiment-specific input and output paths
+    stats_file = Path(config.io.stats_results_file)
+    cross_eval_file = Path(config.io.cross_eval_results_file)
+    output_dir = Path(config.io.output_dir)
+
     if args.list_metrics:
-        df = pd.read_parquet(config.io.stats_results_file)
+        if not stats_file.exists():
+            raise FileNotFoundError(f"Could not find statistical results file at: {stats_file}")
+        df = pd.read_parquet(stats_file)
         metrics = sorted([col for col in df.columns if "/" in col and ("test/" in col or "val/" in col)])
         print("Available metrics:")
         for m in metrics:
@@ -140,8 +152,8 @@ if __name__ == "__main__":
         exit()
 
     analyze_and_plot_results(
-        stats_results_file=config.io.stats_results_file,
-        cross_eval_results_file=config.io.cross_eval_results_file,
-        output_dir=config.io.output_dir,
+        stats_results_file=stats_file,
+        cross_eval_results_file=cross_eval_file,
+        output_dir=output_dir,
         metric=args.metric,
     )

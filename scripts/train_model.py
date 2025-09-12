@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 from typing import List
 
@@ -17,6 +18,34 @@ from src.config_utils import load_config
 # Base seed for ensuring reproducibility of statistical runs
 BASE_SEED = 42
 pl.seed_everything(BASE_SEED, workers=True)
+
+
+def _convert_namespace_to_dict(data):
+    """
+    Recursively converts objects to make them serializable for parquet.
+    - Converts Path objects to strings.
+    - Converts namespace-like objects (e.g., argparse.Namespace) to dictionaries.
+    - Extracts single-item tensor values.
+    """
+    if isinstance(data, Path):
+        return str(data)
+    if isinstance(data, torch.Tensor) and data.numel() == 1:
+        return data.item()
+
+    if isinstance(data, argparse.Namespace):
+        return {k: _convert_namespace_to_dict(v) for k, v in vars(data).items()}
+
+    if hasattr(data, "__dict__") and not isinstance(data, dict):
+        return {k: _convert_namespace_to_dict(v) for k, v in vars(data).items()}
+
+    if isinstance(data, dict):
+        return {key: _convert_namespace_to_dict(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [_convert_namespace_to_dict(item) for item in data]
+    elif isinstance(data, tuple):
+        return tuple(_convert_namespace_to_dict(item) for item in data)
+
+    return data
 
 
 def get_dataset_base_name(file_name: str) -> str:
@@ -85,9 +114,7 @@ def run_single_training_run(
         raise FileNotFoundError("Best model checkpoint not found.")
 
     # --- Save model artifacts (checkpoint and hparams) ---
-    artifact_dir = (
-        run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
-    )
+    artifact_dir = run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     # Instead of extracting the state_dict, we copy the whole checkpoint file for robust loading
@@ -100,7 +127,7 @@ def run_single_training_run(
         {
             "run_id": run_id,
             "seed": seed,
-            "final_train_loss": trainer.callback_metrics.get("train/loss_epoch"),
+            "final_train_loss": trainer.callback_metrics.get("train/loss_epoch", torch.tensor(-1.0)).item(),
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
@@ -155,7 +182,10 @@ def perform_cross_validation(
         try:
             # Create a new dataset and datamodule for the CV dataset
             cv_dataset = HomogeneousSPNDataset(
-                str(config.io.root), str(config.io.raw_data_dir), data_file.name, config.model.label
+                root=str(config.io.root),
+                raw_data_dir=str(config.io.raw_data_dir),
+                raw_file_name=data_file.name,
+                label_to_predict=config.model.label,
             )
 
             if not cv_dataset or len(cv_dataset) == 0:
@@ -201,6 +231,11 @@ def main():
     test_base = get_dataset_base_name(str(config.io.test_file))
     label = config.model.label
     exp_name = f"{train_base}-{test_base}-{label}"
+
+    # Define experiment-specific output paths
+    stats_file = Path(config.io.stats_results_file)
+    cross_eval_file = Path(config.io.cross_eval_results_file)
+
     search_pattern = f"{exp_name}-*.db"
 
     # Find all studies matching the pattern
@@ -208,9 +243,7 @@ def main():
 
     # Filter studies to only include those with operators specified in the config
     selected_studies = [
-        study_path
-        for study_path in all_matching_studies
-        if study_path.stem.split("-")[-1] in config.model.gnn_operator
+        study_path for study_path in all_matching_studies if study_path.stem.split("-")[-1] in config.model.gnn_operator
     ]
 
     if not selected_studies:
@@ -240,10 +273,16 @@ def main():
         print(f"\n--- Training Phase for operator: {run_config.gnn_operator_name} ---")
 
         train_dataset = HomogeneousSPNDataset(
-            str(run_config.root), str(run_config.raw_data_dir), str(run_config.train_file), run_config.label
+            root=str(run_config.root),
+            raw_data_dir=str(run_config.raw_data_dir),
+            raw_file_name=str(run_config.train_file),
+            label_to_predict=run_config.label,
         )
         test_dataset = HomogeneousSPNDataset(
-            str(run_config.root), str(run_config.raw_data_dir), str(run_config.test_file), run_config.label
+            root=str(run_config.root),
+            raw_data_dir=str(run_config.raw_data_dir),
+            raw_file_name=str(run_config.test_file),
+            label_to_predict=run_config.label,
         )
 
         data_module = SPNDataModule(
@@ -281,27 +320,23 @@ def main():
             stats_result.update(hparams_to_save)
             all_stats_results.append(stats_result)
 
-    # --- Final saving of statistical results ---
+    # --- Final saving of statistical and cross-validation results ---
     if all_stats_results:
-        for r in all_stats_results:
-            for k, v in r.items():
-                if isinstance(v, Path):
-                    r[k] = str(v)
-
-        config.io.stats_results_file.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(all_stats_results).to_parquet(config.io.stats_results_file, index=False)
-        print(f"\nStatistical results saved to {config.io.stats_results_file}")
-
-    # --- Final saving of cross-validation results ---
+        _save_results_to_parquet(all_stats_results, stats_file, "\nStatistical results saved to {}")
     if all_cross_val_results:
-        for r in all_cross_val_results:
-            for k, v in r.items():
-                if isinstance(v, Path):
-                    r[k] = str(v)
+        _save_results_to_parquet(all_cross_val_results, cross_eval_file, "Cross-validation results saved to {}")
 
-        config.io.cross_eval_results_file.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(all_cross_val_results).to_parquet(config.io.cross_eval_results_file, index=False)
-        print(f"Cross-validation results saved to {config.io.cross_eval_results_file}")
+
+def _save_results_to_parquet(results: List[dict], file_path: Path, message: str):
+    """
+    Helper function to save a list of dictionaries to a parquet file.
+    It handles the conversion of non-serializable types (e.g., Path, Namespace) to
+    a format compatible with pyarrow and creates parent directories if they don't exist.
+    """
+    # Convert non-serializable objects and create DataFrame
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(_convert_namespace_to_dict(results)).to_parquet(file_path, index=False)
+    print(message.format(file_path))
 
 
 if __name__ == "__main__":

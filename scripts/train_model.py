@@ -50,9 +50,13 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
 
 
 def run_single_training_run(
-    run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule, exp_name: str
-) -> tuple[str, dict]:
-    """Trains one model instance and returns its artifact path and test results."""
+    run_config: argparse.Namespace,
+    run_id: int,
+    data_module: SPNDataModule,
+    exp_name: str,
+    config: argparse.Namespace,
+) -> tuple[str, dict, List[dict]]:
+    """Trains one model instance, runs cross-val, and returns artifact path and results."""
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
 
@@ -90,7 +94,8 @@ def run_single_training_run(
     final_ckpt_path = artifact_dir / "best_model.ckpt"
     Path(best_ckpt_path).rename(final_ckpt_path)
 
-    results = trainer.test(ckpt_path=final_ckpt_path, datamodule=data_module, verbose=False)[0]
+    # Test on the primary test set
+    results = trainer.test(ckpt_path=str(final_ckpt_path), datamodule=data_module, verbose=False)[0]
     results.update(
         {
             "run_id": run_id,
@@ -99,7 +104,90 @@ def run_single_training_run(
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
-    return str(artifact_dir), results
+
+    # Perform cross-validation
+    cross_val_results = perform_cross_validation(
+        trainer=trainer, data_module=data_module, config=config, run_config=run_config, run_id=run_id
+    )
+
+    return str(artifact_dir), results, cross_val_results
+
+
+def perform_cross_validation(
+    trainer: pl.Trainer,
+    data_module: SPNDataModule,
+    config: argparse.Namespace,
+    run_config: argparse.Namespace,
+    run_id: int,
+) -> List[dict]:
+    """
+    Performs cross-validation on a trained model against multiple datasets.
+    """
+    if not hasattr(config.training, "cross_validation") or not config.training.cross_validation.enable:
+        return []
+
+    tqdm.write("\n--- Starting Cross-Validation Phase ---")
+    cross_val_results = []
+
+    # Determine which datasets to use for cross-validation
+    cv_datasets_config = config.training.cross_validation.datasets
+    if not cv_datasets_config:  # If empty, use all .processed files in the data directory
+        all_files = list(config.io.raw_data_dir.glob("*.processed"))
+        # Exclude the main training and test files from the cross-validation set
+        exclude_files = {config.io.train_file.name, config.io.test_file.name}
+        cv_datasets = [f for f in all_files if f.name not in exclude_files]
+    else:
+        cv_datasets = [config.io.raw_data_dir / f for f in cv_datasets_config]
+
+    if not cv_datasets:
+        tqdm.write("No datasets found for cross-validation.")
+        return []
+
+    tqdm.write(f"Found {len(cv_datasets)} datasets for cross-validation.")
+
+    # Use the scaler fitted on the original training data
+    original_scaler = data_module.label_scaler
+    if not original_scaler:
+        tqdm.write("Warning: Label scaler not found in the original data module. Skipping cross-validation.")
+        return []
+
+    for data_file in tqdm(cv_datasets, desc="Cross-validating", leave=False):
+        try:
+            # Create a new dataset and datamodule for the CV dataset
+            cv_dataset = HomogeneousSPNDataset(
+                str(config.io.root), str(config.io.raw_data_dir), data_file.name, config.model.label
+            )
+
+            if not cv_dataset or len(cv_dataset) == 0:
+                tqdm.write(f"  - Skipping empty or invalid dataset: {data_file.name}")
+                continue
+
+            cv_data_module = SPNDataModule(
+                test_data_list=list(cv_dataset),
+                label_to_predict=config.model.label,
+                batch_size=run_config.batch_size,
+                num_workers=run_config.num_workers,
+                label_scaler=original_scaler,  # Pass the original scaler
+            )
+            cv_data_module.setup("test")
+
+            # Run the test using the model from the trainer
+            test_metrics = trainer.test(model=trainer.model, datamodule=cv_data_module, verbose=False)[0]
+
+            # Append results with metadata
+            result_dict = test_metrics.copy()
+            result_dict["cross_eval_dataset"] = data_file.name
+            result_dict["run_id"] = run_id
+            result_dict["seed"] = BASE_SEED + run_id
+            result_dict["gnn_operator"] = run_config.gnn_operator_name
+            cross_val_results.append(result_dict)
+
+        except Exception as e:
+            tqdm.write(f"  - Failed to cross-validate on {data_file.name}: {e}")
+            continue
+
+    tqdm.write("--- Cross-Validation Phase Complete ---")
+    return cross_val_results
 
 
 def main():
@@ -135,6 +223,7 @@ def main():
         print(f"  - {study_path.name}")
 
     all_stats_results = []
+    all_cross_val_results = []
 
     for study_path in selected_studies:
         study_params = load_params_from_study(study_path)
@@ -181,7 +270,10 @@ def main():
                 tqdm.write(f"Skipping run {i} for {run_config.gnn_operator_name}: completed run found.")
                 continue
 
-            artifact_dir, stats_result = run_single_training_run(run_config, i, data_module, exp_name)
+            artifact_dir, stats_result, cross_val_run_results = run_single_training_run(
+                run_config, i, data_module, exp_name, config
+            )
+            all_cross_val_results.extend(cross_val_run_results)
 
             hparams_to_save = vars(run_config).copy()
             hparams_to_save.update({"total_parameters": total_params, "trainable_parameters": trainable_params})
@@ -199,6 +291,17 @@ def main():
         config.io.stats_results_file.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(all_stats_results).to_parquet(config.io.stats_results_file, index=False)
         print(f"\nStatistical results saved to {config.io.stats_results_file}")
+
+    # --- Final saving of cross-validation results ---
+    if all_cross_val_results:
+        for r in all_cross_val_results:
+            for k, v in r.items():
+                if isinstance(v, Path):
+                    r[k] = str(v)
+
+        config.io.cross_eval_results_file.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(all_cross_val_results).to_parquet(config.io.cross_eval_results_file, index=False)
+        print(f"Cross-validation results saved to {config.io.cross_eval_results_file}")
 
 
 if __name__ == "__main__":

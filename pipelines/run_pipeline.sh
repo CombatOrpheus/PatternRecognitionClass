@@ -4,9 +4,8 @@
 # Pipeline Script for Homogeneous GNN SPN Experiments
 # This script orchestrates the entire workflow:
 # 1. Runs hyperparameter optimization based on the operators listed in the config.
-# 2. Kicks off final model training and evaluation for the same operators.
-# 3. Runs cross-validation on the trained models against all datasets.
-# 4. Generates final analysis plots and statistical summaries.
+# 2. Kicks off final model training. This step now includes integrated cross-validation.
+# 3. Generates final analysis plots and statistical summaries.
 #
 # The entire pipeline is non-interactive and driven by the specified config file.
 #
@@ -37,13 +36,8 @@ uv run python -m scripts.train_model --config "$CONFIG_FILE"
 echo "--- Final Model Training Complete ---"
 
 
-# --- Step 3: Cross-Validate Final Models ---
-echo -e "\n\n--- STEP 3: Running Cross-Validation on Trained Models ---"
-uv run python -m scripts.cross_validate_model --config "$CONFIG_FILE"
-echo "--- Cross-Validation Complete ---"
-
-# --- Step 4: Analyze and Plot Results ---
-echo -e "\n\n--- STEP 4: Generating Analysis and Plots ---"
+# --- Step 3: Analyze and Plot Results ---
+echo -e "\n\n--- STEP 3: Generating Analysis and Plots ---"
 uv run python -m scripts.analyze_and_plot --config "$CONFIG_FILE"
 echo "--- Analysis Complete ---"
 

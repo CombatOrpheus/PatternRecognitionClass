@@ -25,6 +25,10 @@ max_epochs = 1
 patience = 5
 val_split = 0.3
 
+[training.cross_validation]
+enable = true
+datasets = []
+
 [optimization]
 n_trials = 1
 timeout = 7200

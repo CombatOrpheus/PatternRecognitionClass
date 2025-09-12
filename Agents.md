@@ -7,9 +7,8 @@ This document outlines the automated agents (scripts) that constitute the MLOps 
 The project follows a standard yet robust machine learning workflow, orchestrated by a series of command-line scripts. The typical order of operations is as follows:
 
 1.  **Hyperparameter Optimization**: Find the best model architecture and training parameters.
-2.  **Model Training**: Perform multiple runs with the best parameters to ensure statistical significance.
-3.  **Cross-Validation**: Evaluate the trained models on a variety of unseen datasets.
-4.  **Analysis and Plotting**: Aggregate the results from training and validation to generate insights.
+2.  **Model Training & Cross-Validation**: Perform multiple training runs with the best parameters. Each run now includes an integrated cross-validation step to evaluate the model on multiple datasets.
+3.  **Analysis and Plotting**: Aggregate the results from training and cross-validation to generate insights.
 
 ## Project Configuration and Setup
 
@@ -85,17 +84,17 @@ There are two specialized agents for this task, depending on the model type.
 
 ### `train_model.py`
 
-*   **Purpose**: After identifying the best hyperparameters, this agent performs multiple training runs (`--num_runs`, typically 30) using different random seeds. This rigorous process validates the statistical stability of the model's performance.
+*   **Purpose**: After identifying the best hyperparameters, this agent performs multiple training runs (`--num_runs`, typically 30) using different random seeds. This process validates the statistical stability of the model's performance. **This script now also includes an integrated cross-validation step**, which runs after each training run is complete.
 
 *   **Inputs**:
-    *   The directory containing the Optuna study databases (`--studies_dir`). The user is prompted to select which optimized model(s) to train.
-    *   Training and testing data files.
+    *   The directory containing the Optuna study databases (`--studies_dir`).
+    *   Training and testing data files (specified in the config).
+    *   (Optional) A list of datasets for cross-validation (in `config.training.cross_validation.datasets`).
 
 *   **Outputs**:
-    *   A directory for each training run (e.g., `results/state_dicts/gnn_spn_experiment/gcn_run_0_seed_42/`) containing:
-        *   `best_model.pt`: The trained model's `state_dict` (weights).
-        *   `hparams.json`: The hyperparameters used for that run.
-    *   A `statistical_results.parquet` file summarizing the performance metrics from all runs.
+    *   A directory for each training run containing the `best_model.ckpt` file and other artifacts.
+    *   A `statistical_results.parquet` file summarizing the primary test performance.
+    *   A `cross_dataset_evaluation.parquet` file summarizing the cross-validation performance.
 
 *   **Usage**:
     ```bash
@@ -104,14 +103,14 @@ There are two specialized agents for this task, depending on the model type.
 
 ---
 
-## Agent 3: Cross-Validation
+## Agent 3: Manual Cross-Validation
 
 ### `cross_validate_model.py`
 
-*   **Purpose**: This agent provides a way to evaluate previously trained models against a collection of new or different datasets without needing to retrain. It loads the saved model artifacts and runs inference.
+*   **Purpose**: This script is for **manual or ad-hoc cross-validation**. It allows you to evaluate previously trained models against a collection of datasets without retraining. This is useful for testing on new datasets after the main pipeline has already run. For automated cross-validation as part of the main workflow, see `train_model.py`.
 
 *   **Inputs**:
-    *   The directory containing the saved model artifacts (weights and hyperparameters) from the training agent (`--experiment_dir`).
+    *   The directory containing the saved model artifacts (`--experiment_dir`).
     *   A directory containing all the `.processed` datasets to test against (`--data_dir`).
 
 *   **Outputs**:
@@ -119,7 +118,7 @@ There are two specialized agents for this task, depending on the model type.
 
 *   **Usage**:
     ```bash
-    python scripts/cross_validate_model.py results/state_dicts/gnn_spn_experiment --data_dir Data/ --output_file results/cross_validation_summary.parquet
+    python scripts/cross_validate_model.py
     ```
 
 ---

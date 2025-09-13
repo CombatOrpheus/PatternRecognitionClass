@@ -98,3 +98,10 @@ This section contains parameters for hyperparameter optimization of the heteroge
   - Default: `7200`
 - `study_name`: The base name for the Optuna study.
   - Default: `"hetero_gnn_spn_optimization"`
+
+## `[cross_validation]` - Cross-Validation Configuration
+
+This section contains parameters for the cross-validation script.
+
+- `datasets`: A list of specific raw dataset filenames (e.g., `"GridData_DS2_all_data.processed"`) to run cross-validation against. If the list is empty, the script will run against all available datasets found in the processed data directory, excluding the model's own training and testing sets.
+  - Default: `[]`

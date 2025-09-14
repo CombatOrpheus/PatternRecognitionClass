@@ -112,10 +112,8 @@ def objective(
     return trainer.callback_metrics["val/loss"].item()
 
 
-def main():
+def main(config, config_path):
     """Main function to run the hyperparameter optimization study."""
-    config, config_path = load_config()
-
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
     operators_to_run = config.model.gnn_operator
 
@@ -190,4 +188,5 @@ def main():
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    main()
+    config, config_path = load_config()
+    main(config, config_path)

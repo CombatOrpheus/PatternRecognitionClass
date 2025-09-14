@@ -48,8 +48,11 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
 
 def run_single_training_run(
     run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule, exp_name: str
-) -> tuple[pl.LightningModule, dict, str]:
-    """Trains one model instance, saves it, and returns the model object, test results, and artifact path."""
+) -> tuple[pl.LightningModule, dict]:
+    """
+    Trains one model instance, saves its checkpoint, and returns the in-memory
+    model with the best weights and its test results.
+    """
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
 
@@ -60,13 +63,16 @@ def run_single_training_run(
         name=exp_name,
         version=f"{run_config.gnn_operator_name}_run_{run_id}",
     )
+
+    # Early stopping will restore the best model weights at the end of training
+    early_stopping_callback = EarlyStopping(monitor="val/loss", patience=run_config.patience, mode="min")
     checkpoint_callback = ModelCheckpoint(monitor="val/loss", mode="min", filename="best")
 
     trainer = pl.Trainer(
         max_epochs=run_config.max_epochs,
         accelerator="auto",
         logger=logger,
-        callbacks=[checkpoint_callback, EarlyStopping(monitor="val/loss", patience=run_config.patience)],
+        callbacks=[checkpoint_callback, early_stopping_callback],
         enable_progress_bar=False,
         enable_model_summary=False,
         log_every_n_steps=1,
@@ -77,20 +83,16 @@ def run_single_training_run(
     if not best_ckpt_path or not Path(best_ckpt_path).exists():
         raise FileNotFoundError("Best model checkpoint not found.")
 
-    # --- Save model artifacts (checkpoint and hparams) ---
+    # --- Save model checkpoint for persistence ---
     artifact_dir = (
         run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
-
     final_ckpt_path = artifact_dir / "best_model.ckpt"
     Path(best_ckpt_path).rename(final_ckpt_path)
 
-    # Load the best model from the checkpoint to ensure we're using the correct weights
-    model_class = type(model)
-    trained_model = model_class.load_from_checkpoint(final_ckpt_path)
-
-    results = trainer.test(model=trained_model, datamodule=data_module, verbose=False)[0]
+    # The `model` object has been updated in-place by the trainer and has the best weights.
+    results = trainer.test(model=model, datamodule=data_module, verbose=False)[0]
     results.update(
         {
             "run_id": run_id,
@@ -99,12 +101,11 @@ def run_single_training_run(
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
-    return trained_model, results, str(final_ckpt_path)
+    return model, results
 
 
-def main():
+def main(config):
     """Main function to orchestrate the entire experiment workflow."""
-    config, _ = load_config()
     cross_validator = CrossValidator(config)
 
     studies_dir = config.io.studies_dir
@@ -180,12 +181,14 @@ def main():
                 tqdm.write(f"Skipping run {i} for {run_config.gnn_operator_name}: completed run found.")
                 continue
 
-            trained_model, stats_result, final_ckpt_path = run_single_training_run(
+            trained_model, stats_result = run_single_training_run(
                 run_config, i, data_module, exp_name
             )
 
             # --- Cross-validation ---
-            cv_results_for_model = cross_validator.cross_validate_single_model(trained_model, final_ckpt_path)
+            cv_results_for_model = cross_validator.cross_validate_single_model(
+                trained_model, run_config, i, seed
+            )
             all_cv_results.extend(cv_results_for_model)
 
             hparams_to_save = vars(run_config).copy()
@@ -220,4 +223,5 @@ def main():
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    main()
+    config, _ = load_config()
+    main(config)

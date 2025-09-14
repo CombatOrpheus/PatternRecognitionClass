@@ -58,7 +58,6 @@ def cross_validate_models(paths: PathHandler, config: dict):
         print(f"Error: No '.processed' files found in data directory '{paths.io_config.raw_data_dir}'.")
         return
 
-    print(f"Found {len(test_files)} datasets to evaluate against.")
     print(f"Found {len(checkpoint_files)} trained model runs to evaluate.")
 
     all_results: List[Dict[str, Any]] = []
@@ -74,8 +73,8 @@ def cross_validate_models(paths: PathHandler, config: dict):
                 test_dataset = HomogeneousSPNDataset(
                     root=str(config.io.root),
                     raw_data_dir=str(config.io.raw_data_dir),
-                    raw_file_name=data_file.name,
-                    label_to_predict=datamodule_hparams.get("label_to_predict", config.model.label),
+                    raw_file_name=raw_fname,
+                    label_to_predict=label,
                 )
 
                 if not test_dataset:
@@ -83,7 +82,7 @@ def cross_validate_models(paths: PathHandler, config: dict):
 
                 data_module = SPNDataModule(
                     test_data_list=list(test_dataset),
-                    label_to_predict=datamodule_hparams.get("label_to_predict", config.model.label),
+                    label_to_predict=label,
                     batch_size=datamodule_hparams.get("batch_size", 512),
                     num_workers=datamodule_hparams.get("num_workers", 0),
                 )
@@ -112,7 +111,6 @@ def cross_validate_models(paths: PathHandler, config: dict):
         output_file = paths.get_cross_eval_results_path()
         print(f"\n--- Aggregating {len(all_results)} results and saving to {output_file} ---")
         results_df = pd.DataFrame(all_results)
-
         output_file.parent.mkdir(parents=True, exist_ok=True)
         results_df.to_parquet(output_file, index=False)
         print("Cross-evaluation results saved successfully.")

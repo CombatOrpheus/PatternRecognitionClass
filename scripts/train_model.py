@@ -19,8 +19,9 @@ BASE_SEED = 42
 pl.seed_everything(BASE_SEED, workers=True)
 
 
-def load_params_from_study(storage_url: str) -> dict:
+def load_params_from_study(study_db_path: Path) -> dict:
     """Loads the best hyperparameters from an Optuna study."""
+    storage_url = f"sqlite:///{study_db_path}"
     study = optuna.load_study(study_name=None, storage=storage_url)
     return {**study.best_trial.params, **study.user_attrs}
 
@@ -103,11 +104,18 @@ def main():
     paths = PathHandler(config.io)
 
     exp_name = paths.get_experiment_name(config.io.train_file, config.io.test_file, config.model.label)
-    selected_studies = paths.find_matching_studies(exp_name, config.model.gnn_operator)
+
+    search_pattern = f"{exp_name}-*.db"
+    all_matching_studies = sorted(list(config.io.studies_dir.glob(search_pattern)))
+    selected_studies = [
+        study_path
+        for study_path in all_matching_studies
+        if study_path.stem.split("-")[-1] in config.model.gnn_operator
+    ]
 
     if not selected_studies:
         print(f"No Optuna studies found matching the current configuration in '{config.io.studies_dir}'.")
-        print(f"  (Searched for pattern: '{exp_name}-*.db' with operators: {config.model.gnn_operator})")
+        print(f"  (Searched for pattern: '{search_pattern}' with operators: {config.model.gnn_operator})")
         return
 
     print("\nFound and training the following studies:")
@@ -117,8 +125,7 @@ def main():
     all_stats_results = []
 
     for study_path in selected_studies:
-        storage_url = paths.get_study_storage_url(study_path)
-        study_params = load_params_from_study(storage_url)
+        study_params = load_params_from_study(study_path)
 
         # Create a copy of the config to avoid modification across loops
         run_config = argparse.Namespace(

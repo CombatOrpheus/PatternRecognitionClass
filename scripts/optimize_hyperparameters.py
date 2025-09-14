@@ -157,7 +157,7 @@ def main():
         study.set_user_attr("config", user_attrs)
 
         study.optimize(
-            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler, study__name, paths),
+            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler, study_name, paths),
             n_trials=run_config.n_trials,
             timeout=run_config.timeout,
             show_progress_bar=False,

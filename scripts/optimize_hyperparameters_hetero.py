@@ -128,7 +128,7 @@ def main():
         )
         run_config.gnn_operator = gnn_operator
 
-        study_name = f"{run_config.study_name}_{gnn_operator}"
+        study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
         study_db_path = paths.get_study_db_path(study_name, "")  # Operator is in the name
         storage_name = paths.get_study_storage_url(study_db_path)
         config_save_path = paths.get_study_config_path(study_name)

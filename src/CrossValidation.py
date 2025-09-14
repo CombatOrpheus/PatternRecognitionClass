@@ -43,8 +43,8 @@ class CrossValidator:
 
         # Determine which datasets this model was trained/tested on so we can exclude them.
         excluded_raw_files = {
-            Path(model_hparams.get("train_file")).name,
-            Path(model_hparams.get("test_file")).name,
+            Path(run_config.train_file),
+            Path(run_config.test_file),
         }
 
         datasets_to_eval = self._get_datasets_to_evaluate()

@@ -51,13 +51,6 @@ To run the hyperparameter optimization for the heterogeneous models:
 python scripts/optimize_hyperparameters_hetero.py
 ```
 
-### Analyze Results
-
-To analyze the results and generate plots:
-```bash
-python scripts/analyze_and_plot.py
-```
-
 ### Test a Model
 
 To evaluate trained models on a directory of test data:

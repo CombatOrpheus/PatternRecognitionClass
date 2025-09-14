@@ -14,6 +14,7 @@ from src.HomogeneousModels import BaseGNN_SPN_Model, GraphGNN_SPN_Model, MixedGN
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
+from src.CrossValidator import CrossValidator
 
 # Base seed for ensuring reproducibility of statistical runs
 BASE_SEED = 42
@@ -128,11 +129,36 @@ def main():
     """Main function to orchestrate the entire experiment workflow."""
     config = load_config()
 
+    # --- Prepare for Cross-Validation ---
+    cross_val_files = sorted(list(config.io.raw_data_dir.glob("*.processed")))
+    if not cross_val_files:
+        print(f"Warning: No cross-validation files found in {config.io.raw_data_dir}. Skipping cross-validation.")
+        cross_val_dataloaders = []
+    else:
+        print(f"Found {len(cross_val_files)} files for cross-validation.")
+        cross_val_dataloaders = [
+            SPNDataModule(
+                test_data_list=[HomogeneousSPNDataset(
+                    root=str(config.io.root),
+                    raw_data_dir=str(config.io.raw_data_dir),
+                    raw_file_name=f.name,
+                    label_to_predict=config.model.label,
+                )],
+                label_to_predict=config.model.label,
+                batch_size=config.training.batch_size,
+                num_workers=config.training.num_workers,
+            )
+            for f in cross_val_files
+        ]
+        for dm in cross_val_dataloaders:
+            dm.setup("test")
+
     selected_studies = select_studies(config.io.studies_dir)
     if not selected_studies:
         return
 
     all_stats_results = []
+    all_cross_val_results = []
 
     for study_path in selected_studies:
         study_params = load_params_from_study(study_path)
@@ -201,6 +227,26 @@ def main():
             stats_result.update(hparams_to_save)
             all_stats_results.append(stats_result)
 
+            # --- Perform Cross-Validation ---
+            if cross_val_dataloaders:
+                model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
+                model_class = model_classes.get(
+                    run_config.gnn_operator if run_config.gnn_operator == "mixed" else run_config.prediction_level
+                )
+                if model_class:
+                    checkpoint_path = Path(artifact_dir) / "best_model.ckpt"
+                    if checkpoint_path.exists():
+                        trained_model = model_class.load_from_checkpoint(checkpoint_path)
+
+                        validator = CrossValidator(cross_val_dataloaders)
+                        cross_val_df = validator.run(trained_model)
+
+                        if not cross_val_df.empty:
+                            cross_val_df["gnn_operator"] = run_config.gnn_operator
+                            cross_val_df["run_id"] = i
+                            cross_val_df["seed"] = seed
+                            all_cross_val_results.append(cross_val_df)
+
     # --- Final saving of statistical results ---
     if all_stats_results:
         for r in all_stats_results:
@@ -211,6 +257,14 @@ def main():
         config.io.stats_results_file.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(all_stats_results).to_parquet(config.io.stats_results_file, index=False)
         print(f"\nStatistical results saved to {config.io.stats_results_file}")
+
+    # --- Final saving of cross-validation results ---
+    if all_cross_val_results:
+        final_cross_val_df = pd.concat(all_cross_val_results, ignore_index=True)
+        output_file = config.io.cross_eval_results_file
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        final_cross_val_df.to_parquet(output_file, index=False)
+        print(f"\nCross-validation results saved to {output_file}")
 
 
 if __name__ == "__main__":

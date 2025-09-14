@@ -1,9 +1,7 @@
 import re
 from pathlib import Path
+import argparse
 from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from src.config_utils import IOConfig
 
 
 class PathHandler:
@@ -11,7 +9,7 @@ class PathHandler:
     A centralized handler for constructing and managing file and directory paths for the project.
     """
 
-    def __init__(self, io_config: "IOConfig"):
+    def __init__(self, io_config: argparse.Namespace):
         """
         Initializes the PathHandler with the I/O configuration.
         """

@@ -1,15 +1,15 @@
-import argparse
 import importlib
-import re
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import lightning.pytorch as pl
 import pandas as pd
 import torch
 from tqdm import tqdm
 
+from src.config_utils import load_config
+from src.path_utils import PathHandler
 from src.PetriNets import load_spn_data_from_files
 from src.SPNDataModule import SPNDataModule
 
@@ -18,7 +18,7 @@ def load_model_dynamically(checkpoint_path: str) -> tuple[pl.LightningModule, di
     """
     Dynamically loads a Lightning model and its checkpoint data.
     """
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
@@ -40,71 +40,23 @@ def load_model_dynamically(checkpoint_path: str) -> tuple[pl.LightningModule, di
     return model, checkpoint
 
 
-def parse_metadata_from_path(ckpt_path: Path, experiment_dir: Path) -> Dict[str, Any]:
+def evaluate_experiment_on_directory(paths: PathHandler):
     """
-    Infers metadata such as the experiment name, operator, and run ID from the path structure.
+    Finds all model checkpoints, evaluates them against all test data, and aggregates results.
     """
-    metadata = {}
-
-    # 1. Get experiment name from the parent directory
-    metadata["experiment_name"] = experiment_dir.name
-
-    # 2. Infer GNN operator from the experiment name
-    known_operators = ["gcn", "tag", "cheb", "sgc", "ssg"]
-    name_parts = experiment_dir.name.split("_")
-    found_operator = [op for op in known_operators if op in name_parts]
-    metadata["gnn_operator_inferred"] = found_operator[0] if found_operator else "unknown"
-
-    # 3. Parse run_id and seed from the version directory (e.g., 'run_0_seed_42')
-    version_dir_name = ckpt_path.parent.parent.name
-    match = re.match(r"run_(\d+)_seed_(\d+)", version_dir_name)
-    if match:
-        metadata["run_id_inferred"] = int(match.group(1))
-        metadata["seed_inferred"] = int(match.group(2))
-
-    return metadata
-
-
-def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path, output_parquet_path: Path):
-    """
-    Finds all model checkpoints in an experiment directory, evaluates each against
-    all files in a data directory, and aggregates results into a single Parquet file.
-    It prefers 'best.ckpt' if available in a checkpoint directory, otherwise uses any other '.ckpt' file.
-    """
+    experiment_dir = paths.io_config.experiment_dir
     print(f"--- Scanning for model checkpoints in: {experiment_dir} ---")
-    all_ckpts = sorted(list(experiment_dir.glob("**/checkpoints/*.ckpt")))
-
-    # Group checkpoints by their parent directory to handle multiple files per run
-    checkpoints_by_dir: Dict[Path, List[Path]] = {}
-    for ckpt_path in all_ckpts:
-        dir_path = ckpt_path.parent
-        if dir_path not in checkpoints_by_dir:
-            checkpoints_by_dir[dir_path] = []
-        checkpoints_by_dir[dir_path].append(ckpt_path)
-
-    # Select the definitive checkpoint for each run directory
-    final_checkpoint_paths = []
-    for dir_path, ckpts in checkpoints_by_dir.items():
-        best_ckpt_path = dir_path / "best.ckpt"
-        # Check for existence of 'best.ckpt' in the list of found checkpoints
-        if best_ckpt_path in ckpts:
-            final_checkpoint_paths.append(best_ckpt_path)  # Prefer 'best.ckpt'
-        elif ckpts:
-            # If no 'best.ckpt', take the first available checkpoint.
-            # This is useful if only one checkpoint is saved without being named 'best'.
-            final_checkpoint_paths.append(ckpts[0])
-
-    checkpoint_paths = sorted(final_checkpoint_paths)
+    checkpoint_paths = paths.find_model_checkpoints(experiment_dir)
 
     if not checkpoint_paths:
-        print(f"Error: No '.ckpt' files found in any 'checkpoints' subdirectory of '{experiment_dir}'.")
+        print(f"Error: No 'best.ckpt' files found in any 'checkpoints' subdirectory of '{experiment_dir}'.")
         return
 
     print(f"Found {len(checkpoint_paths)} model checkpoints to evaluate.")
 
-    test_files = sorted(list(data_directory.glob("*.processed")))
+    test_files = paths.find_processed_data_files()
     if not test_files:
-        print(f"Error: No '.processed' files found in data directory '{data_directory}'.")
+        print(f"Error: No '.processed' files found in data directory '{paths.io_config.data_dir}'.")
         return
 
     print(f"Found {len(test_files)} test datasets to evaluate against.")
@@ -113,8 +65,7 @@ def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path,
 
     for ckpt_path in tqdm(checkpoint_paths, desc="Evaluating Checkpoints"):
         try:
-            # --- NEW: Parse metadata from the path structure ---
-            path_metadata = parse_metadata_from_path(ckpt_path, experiment_dir)
+            path_metadata = PathHandler.parse_metadata_from_path(ckpt_path)
 
             model, checkpoint = load_model_dynamically(str(ckpt_path))
             model.eval()
@@ -147,8 +98,6 @@ def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path,
                 if test_metrics:
                     result_dict = test_metrics[0]
                     result_dict["test_dataset"] = data_file.name
-
-                    # Add path-based and hyperparameter metadata
                     result_dict.update(path_metadata)
                     for param, value in model_hparams.items():
                         if isinstance(value, (str, int, float, bool)):
@@ -160,24 +109,18 @@ def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path,
             continue
 
     if all_results:
-        print(f"\n--- Aggregating {len(all_results)} results and saving to {output_parquet_path} ---")
+        output_path = paths.get_cross_eval_results_path()
+        print(f"\n--- Aggregating {len(all_results)} results and saving to {output_path} ---")
         results_df = pd.DataFrame(all_results)
-
-        output_parquet_path.parent.mkdir(parents=True, exist_ok=True)
-        results_df.to_parquet(output_parquet_path, index=False)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        results_df.to_parquet(output_path, index=False)
         print("Evaluation results saved successfully.")
     else:
         print("\n--- No successful evaluations were completed. No output file generated. ---")
 
 
-from src.config_utils import load_config
-
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
     config, _ = load_config()
-
-    evaluate_experiment_on_directory(
-        experiment_dir=config.io.experiment_dir,
-        data_directory=config.io.data_dir,
-        output_parquet_path=config.io.output_file,
-    )
+    path_handler = PathHandler(config.io)
+    evaluate_experiment_on_directory(path_handler)

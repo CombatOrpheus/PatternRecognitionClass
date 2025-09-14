@@ -1,5 +1,4 @@
 import argparse
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -8,13 +7,18 @@ import scipy.stats as ss
 import seaborn as sns
 
 from src.config_utils import load_config
+from src.path_utils import PathHandler
 
 
-def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: Path, output_dir: Path, metric: str):
+def analyze_and_plot_results(paths: PathHandler, metric: str):
     """
     Loads all experimental results, performs statistical analysis, and generates
     a comprehensive set of summary tables and plots.
     """
+    stats_results_file = paths.get_stats_results_path()
+    cross_eval_results_file = paths.get_cross_eval_results_path()
+    output_dir = paths.get_analysis_output_dir()
+
     # --- Setup ---
     if not stats_results_file.exists():
         raise FileNotFoundError(f"Statistical results file not found at: {stats_results_file}")
@@ -31,7 +35,6 @@ def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: 
     # --- 1. Main Performance Analysis (from stats_results_file) ---
     print("\n--- Analyzing Main Statistical Results ---")
 
-    # Summary Table
     summary_df = (
         stats_df.groupby("gnn_operator")
         .agg(
@@ -45,17 +48,15 @@ def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: 
     print(summary_df)
     summary_df.to_csv(output_dir / "main_performance_summary.csv", index=False, float_format="%.4f")
 
-    # Statistical Tests (Friedman + Conover)
     model_groups = [group[metric].values for _, group in stats_df.groupby("gnn_operator")]
     if len(model_groups) > 1:
         friedman_stat, p_value = ss.friedmanchisquare(*model_groups)
         print(f"\nFriedman Test on '{metric}': statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
         if p_value < 0.05:
             posthoc_results = sp.posthoc_conover_friedman(
-                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator", block_id_col="run_id"
+                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator"
             )
 
-            # Critical Difference Diagram
             avg_rank = stats_df.groupby("run_id")[metric].rank().groupby(stats_df["gnn_operator"]).mean()
             fig, ax = plt.subplots(figsize=(10, max(4, len(avg_rank) * 0.5)))
             sp.critical_difference_diagram(ranks=avg_rank, sig_matrix=posthoc_results, ax=ax)
@@ -64,7 +65,6 @@ def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: 
             plt.close()
             print("Critical difference diagram saved.")
 
-    # Performance vs. Complexity Plots
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     sns.boxplot(ax=axes[0], data=stats_df, x="gnn_operator", y=metric, palette="viridis")
     axes[0].set_title("Model Performance Distribution", fontsize=14, weight="bold")
@@ -93,11 +93,10 @@ def analyze_and_plot_results(stats_results_file: Path, cross_eval_results_file: 
     # --- 2. Cross-Evaluation Analysis (from cross_eval_results_file) ---
     print("\n--- Analyzing Cross-Evaluation Results ---")
 
-    # Heatmap of performance across datasets
     pivot_table = cross_df.pivot_table(
-        index="gnn_operator", columns="cross_eval_dataset", values=metric, aggfunc="mean"
+        index="gnn_operator", columns="test_dataset", values=metric, aggfunc="mean"
     )
-    plt.figure(figsize=(max(10, pivot_table.shape[1]), max(6, pivot_table.shape[0])))
+    plt.figure(figsize=(max(10, pivot_table.shape[1] * 0.8), max(6, pivot_table.shape[0] * 0.6)))
     sns.heatmap(pivot_table, annot=True, fmt=".4f", cmap="viridis_r", linewidths=0.5)
     plt.title(f"Cross-Dataset Generalization ({metric.replace('/', ' ').title()})")
     plt.xlabel("Test Dataset")
@@ -123,25 +122,20 @@ if __name__ == "__main__":
         "--list-metrics", action="store_true", help="List all available metrics from the results file and exit."
     )
 
-    # Parse the script-specific arguments first.
-    # The remaining arguments (like --config) will be handled by load_config.
     args, unknown_args = parser.parse_known_args()
-
-    # Pass only the unknown args to the config loader.
     config, _ = load_config(unknown_args)
+    paths = PathHandler(config.io)
 
     if args.list_metrics:
-        df = pd.read_parquet(config.io.stats_results_file)
+        stats_file = paths.get_stats_results_path()
+        if not stats_file.exists():
+            print(f"Error: Stats results file not found at {stats_file}")
+            exit(1)
+        df = pd.read_parquet(stats_file)
         metrics = sorted([col for col in df.columns if "/" in col and ("test/" in col or "val/" in col)])
         print("Available metrics:")
         for m in metrics:
             print(f"  - {m}")
-        # Exit after listing metrics
         exit()
 
-    analyze_and_plot_results(
-        stats_results_file=config.io.stats_results_file,
-        cross_eval_results_file=config.io.cross_eval_results_file,
-        output_dir=config.io.output_dir,
-        metric=args.metric,
-    )
+    analyze_and_plot_results(paths=paths, metric=args.metric)

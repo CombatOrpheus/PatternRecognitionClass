@@ -9,6 +9,7 @@ import torch
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from tqdm import tqdm
 
+from src.CrossValidation import CrossValidator
 from src.HomogeneousModels import BaseGNN_SPN_Model, GraphGNN_SPN_Model, MixedGNN_SPN_Model, NodeGNN_SPN_Model
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
@@ -47,8 +48,8 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
 
 def run_single_training_run(
     run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule, exp_name: str
-) -> tuple[str, dict]:
-    """Trains one model instance and returns its artifact path and test results."""
+) -> tuple[pl.LightningModule, dict, str]:
+    """Trains one model instance, saves it, and returns the model object, test results, and artifact path."""
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
 
@@ -82,11 +83,14 @@ def run_single_training_run(
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    # Instead of extracting the state_dict, we copy the whole checkpoint file for robust loading
     final_ckpt_path = artifact_dir / "best_model.ckpt"
     Path(best_ckpt_path).rename(final_ckpt_path)
 
-    results = trainer.test(ckpt_path=final_ckpt_path, datamodule=data_module, verbose=False)[0]
+    # Load the best model from the checkpoint to ensure we're using the correct weights
+    model_class = type(model)
+    trained_model = model_class.load_from_checkpoint(final_ckpt_path)
+
+    results = trainer.test(model=trained_model, datamodule=data_module, verbose=False)[0]
     results.update(
         {
             "run_id": run_id,
@@ -95,12 +99,13 @@ def run_single_training_run(
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
-    return str(artifact_dir), results
+    return trained_model, results, str(final_ckpt_path)
 
 
 def main():
     """Main function to orchestrate the entire experiment workflow."""
     config, _ = load_config()
+    cross_validator = CrossValidator(config)
 
     studies_dir = config.io.studies_dir
 
@@ -128,6 +133,7 @@ def main():
         print(f"  - {study_path.name}")
 
     all_stats_results = []
+    all_cv_results = []
 
     for study_path in selected_studies:
         study_params = load_params_from_study(study_path)
@@ -174,7 +180,13 @@ def main():
                 tqdm.write(f"Skipping run {i} for {run_config.gnn_operator_name}: completed run found.")
                 continue
 
-            artifact_dir, stats_result = run_single_training_run(run_config, i, data_module, exp_name)
+            trained_model, stats_result, final_ckpt_path = run_single_training_run(
+                run_config, i, data_module, exp_name
+            )
+
+            # --- Cross-validation ---
+            cv_results_for_model = cross_validator.cross_validate_single_model(trained_model, final_ckpt_path)
+            all_cv_results.extend(cv_results_for_model)
 
             hparams_to_save = vars(run_config).copy()
             hparams_to_save.update({"total_parameters": total_params, "trainable_parameters": trainable_params})
@@ -192,6 +204,18 @@ def main():
         config.io.stats_results_file.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(all_stats_results).to_parquet(config.io.stats_results_file, index=False)
         print(f"\nStatistical results saved to {config.io.stats_results_file}")
+
+    # --- Final saving of cross-validation results ---
+    if all_cv_results:
+        for r in all_cv_results:
+            for k, v in r.items():
+                if isinstance(v, Path):
+                    r[k] = str(v)
+
+        cv_results_file = config.io.cross_eval_results_file
+        cv_results_file.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(all_cv_results).to_parquet(cv_results_file, index=False)
+        print(f"\nCross-validation results saved to {cv_results_file}")
 
 
 if __name__ == "__main__":

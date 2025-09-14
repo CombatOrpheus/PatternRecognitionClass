@@ -42,6 +42,3 @@ all_operators = false
 n_trials = 100
 timeout = 7200
 study_name = "hetero_gnn_spn_optimization"
-
-[cross_validation]
-datasets = []

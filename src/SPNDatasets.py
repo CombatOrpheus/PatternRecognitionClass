@@ -38,7 +38,7 @@ class BaseSPNDataset(InMemoryDataset):
         self.raw_file_name = Path(raw_file_name)
         self.label_to_predict = label_to_predict
         super().__init__(root, transform, pre_transform)
-        self.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
 
     @property
     def raw_dir(self) -> str:
@@ -96,8 +96,8 @@ class HomogeneousSPNDataset(BaseSPNDataset):
             data_list.append(data)
         if self.pre_transform is not None:
             data_list = [self.pre_transform(data) for data in data_list]
-
-        self.save(data_list, self.processed_paths[0])
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
 
 
 class HeterogeneousSPNDataset(BaseSPNDataset):
@@ -117,8 +117,8 @@ class HeterogeneousSPNDataset(BaseSPNDataset):
             data_list.append(data)
         if self.pre_transform is not None:
             data_list = [self.pre_transform(data) for data in data_list]
-
-        self.save(data_list, self.processed_paths[0])
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
 
 
 class ReachabilityGraphInMemoryDataset(BaseSPNDataset):
@@ -144,5 +144,5 @@ class ReachabilityGraphInMemoryDataset(BaseSPNDataset):
             data_list.append(data)
         if self.pre_transform is not None:
             data_list = [self.pre_transform(data) for data in data_list]
-
-        self.save(data_list, self.processed_paths[0])
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])

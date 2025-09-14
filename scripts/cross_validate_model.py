@@ -14,6 +14,7 @@ from tqdm import tqdm
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
+from src.name_utils import generate_experiment_name
 
 
 def load_model_dynamically(checkpoint_path: str) -> tuple[pl.LightningModule, dict]:
@@ -159,7 +160,9 @@ def main():
     """Parses command-line arguments for the cross-validation script."""
     config, _ = load_config()
 
-    experiment_dir = config.io.state_dict_dir / config.io.exp_name
+    # Generate the experiment name dynamically from the config
+    exp_name = generate_experiment_name(config.io.train_file, config.io.test_file, config.model.label)
+    experiment_dir = config.io.state_dict_dir / exp_name
     output_file = config.io.cross_eval_results_file
 
     cross_validate_models(experiment_dir=experiment_dir, output_file=output_file, config=config)

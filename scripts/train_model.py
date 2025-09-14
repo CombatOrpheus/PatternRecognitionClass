@@ -13,15 +13,11 @@ from src.HomogeneousModels import BaseGNN_SPN_Model, GraphGNN_SPN_Model, MixedGN
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
+from src.name_utils import generate_experiment_name
 
 # Base seed for ensuring reproducibility of statistical runs
 BASE_SEED = 42
 pl.seed_everything(BASE_SEED, workers=True)
-
-
-def get_dataset_base_name(file_name: str) -> str:
-    """Extracts the base name from a dataset file name."""
-    return "_".join(Path(file_name).stem.split("_")[:2])
 
 
 def load_params_from_study(study_db_path: Path) -> dict:
@@ -109,10 +105,7 @@ def main():
     studies_dir = config.io.studies_dir
 
     # Construct the search pattern based on the current configuration
-    train_base = get_dataset_base_name(str(config.io.train_file))
-    test_base = get_dataset_base_name(str(config.io.test_file))
-    label = config.model.label
-    exp_name = f"{train_base}-{test_base}-{label}"
+    exp_name = generate_experiment_name(config.io.train_file, config.io.test_file, config.model.label)
     search_pattern = f"{exp_name}-*.db"
 
     # Find all studies matching the pattern

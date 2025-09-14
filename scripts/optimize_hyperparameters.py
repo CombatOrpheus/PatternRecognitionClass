@@ -17,16 +17,12 @@ from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model, MixedGN
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
+from src.name_utils import generate_experiment_name
 
 pl.seed_everything(42, workers=True)
 # Suppress verbose hardware information from PyTorch Lightning
 logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.ERROR)
 logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.ERROR)
-
-
-def get_dataset_base_name(file_name: str) -> str:
-    """Extracts the base name from a dataset file name."""
-    return "_".join(Path(file_name).stem.split("_")[:2])
 
 
 def objective(
@@ -141,9 +137,7 @@ def main():
 
     print("Data loaded successfully.")
 
-    train_base_name = get_dataset_base_name(str(config.io.train_file))
-    test_base_name = get_dataset_base_name(str(config.io.test_file))
-    label_name = config.model.label
+    base_exp_name = generate_experiment_name(config.io.train_file, config.io.test_file, config.model.label)
 
     for gnn_operator in tqdm(operators_to_run, desc="Total Optimization Progress"):
         # Create a copy of the config to avoid modification across loops
@@ -153,7 +147,7 @@ def main():
         run_config.gnn_operator = gnn_operator
         if gnn_operator == "mixed":
             run_config.prediction_level = "graph"
-        study_name = f"{train_base_name}-{test_base_name}-{label_name}-{gnn_operator}"
+        study_name = f"{base_exp_name}-{gnn_operator}"
         storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
 
         # --- Save config for reproducibility ---

@@ -11,26 +11,50 @@ import seaborn as sns
 class Analysis:
     def __init__(self, config):
         self.config = config
+        self.output_dir = self.config.io.output_dir
+        self.analysis_config = self.config.analysis
 
-    def run(self, metric: str = "test/rmse"):
+    def run(self):
         stats_results_file = self.config.io.stats_results_file
         cross_eval_results_file = self.config.io.cross_eval_results_file
-        output_dir = self.config.io.output_dir
 
         if not stats_results_file.exists():
             raise FileNotFoundError(f"Statistical results file not found at: {stats_results_file}")
         if not cross_eval_results_file.exists():
             raise FileNotFoundError(f"Cross-evaluation results file not found at: {cross_eval_results_file}")
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"--- Analysis outputs will be saved to: {output_dir} ---")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"--- Analysis outputs will be saved to: {self.output_dir} ---")
 
         stats_df = pd.read_parquet(stats_results_file)
         cross_df = pd.read_parquet(cross_eval_results_file)
         sns.set_theme(style="whitegrid")
 
-        print("\n--- Analyzing Main Statistical Results ---")
+        # --- Main Analysis ---
+        print("\n--- Running Main Analysis ---")
+        for metric in self.analysis_config.main_metrics:
+            print(f"\n--- Analyzing Metric: {metric} ---")
+            metric_output_dir = self.output_dir / "main" / metric.replace('/', '_')
+            metric_output_dir.mkdir(parents=True, exist_ok=True)
 
+            summary_df = self._calculate_summary(stats_df, metric, metric_output_dir)
+            if self.analysis_config.generate_critical_diagram:
+                self._plot_critical_difference(stats_df, metric, metric_output_dir)
+            if self.analysis_config.generate_performance_complexity_plot:
+                self._plot_performance_complexity(stats_df, summary_df, metric, metric_output_dir)
+
+        # --- Cross-Validation Analysis ---
+        if self.analysis_config.generate_cross_eval_heatmap:
+            print("\n--- Running Cross-Validation Analysis ---")
+            for metric in self.analysis_config.cross_val_metrics:
+                print(f"\n--- Analyzing Metric for Heatmap: {metric} ---")
+                metric_output_dir = self.output_dir / "cross_val" / metric.replace('/', '_')
+                metric_output_dir.mkdir(parents=True, exist_ok=True)
+                self._plot_cross_eval_heatmap(cross_df, metric, metric_output_dir)
+
+        print("\n--- Analysis complete. ---")
+
+    def _calculate_summary(self, stats_df, metric, output_dir):
         summary_df = (
             stats_df.groupby("gnn_operator")
             .agg(
@@ -39,45 +63,56 @@ class Analysis:
                 trainable_parameters=("trainable_parameters", "first"),
             )
             .reset_index()
+            .rename(columns={"mean_metric": f"mean_{metric}", "std_metric": f"std_{metric}"})
         )
         print("Model Performance Summary:")
         print(summary_df)
         summary_df.to_csv(output_dir / "main_performance_summary.csv", index=False, float_format="%.4f")
+        return summary_df
 
+    def _plot_critical_difference(self, stats_df, metric, output_dir):
         model_groups = [group[metric].values for _, group in stats_df.groupby("gnn_operator")]
-        if len(model_groups) > 1:
-            friedman_stat, p_value = ss.friedmanchisquare(*model_groups)
-            print(f"\nFriedman Test on '{metric}': statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
-            if p_value < 0.05:
-                posthoc_results = sp.posthoc_conover_friedman(
-                    stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator", block_id_col="run_id"
-                )
+        if len(model_groups) <= 1:
+            print("Skipping Friedman test and critical difference diagram: only one model group.")
+            return
 
-                avg_rank = stats_df.groupby("run_id")[metric].rank().groupby(stats_df["gnn_operator"]).mean()
-                fig, ax = plt.subplots(figsize=(10, max(4, len(avg_rank) * 0.5)))
-                sp.critical_difference_diagram(ranks=avg_rank, sig_matrix=posthoc_results, ax=ax)
-                ax.set_title(f"Critical Difference Diagram for {metric.replace('/', ' ').title()}")
-                plt.savefig(output_dir / "critical_difference_diagram.svg", bbox_inches="tight")
-                plt.close()
-                print("Critical difference diagram saved.")
+        friedman_stat, p_value = ss.friedmanchisquare(*model_groups)
+        print(f"\nFriedman Test on '{metric}': statistic={friedman_stat:.4f}, p-value={p_value:.4g}")
 
+        if p_value < 0.05:
+            posthoc_results = sp.posthoc_conover_friedman(
+                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator"
+            )
+            avg_rank = stats_df.groupby("run_id")[metric].rank().groupby(stats_df["gnn_operator"]).mean()
+
+            fig, ax = plt.subplots(figsize=(10, max(4, len(avg_rank) * 0.5)))
+            sp.critical_difference_diagram(ranks=avg_rank, sig_matrix=posthoc_results, ax=ax)
+            ax.set_title(f"Critical Difference Diagram for {metric.replace('/', ' ').title()}")
+            plt.savefig(output_dir / "critical_difference_diagram.svg", bbox_inches="tight")
+            plt.close()
+            print("Critical difference diagram saved.")
+        else:
+            print("No significant difference found; skipping post-hoc test and diagram.")
+
+    def _plot_performance_complexity(self, stats_df, summary_df, metric, output_dir):
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
         sns.boxplot(ax=axes[0], data=stats_df, x="gnn_operator", y=metric, palette="viridis")
         axes[0].set_title("Model Performance Distribution", fontsize=14, weight="bold")
         axes[0].tick_params(axis="x", rotation=45)
 
+        mean_metric_col = f"mean_{metric}"
         sns.scatterplot(
             ax=axes[1],
             data=summary_df,
             x="trainable_parameters",
-            y="mean_metric",
+            y=mean_metric_col,
             hue="gnn_operator",
             s=200,
             palette="viridis",
             legend=False,
         )
         for _, row in summary_df.iterrows():
-            axes[1].text(row["trainable_parameters"] * 1.01, row["mean_metric"], row["gnn_operator"])
+            axes[1].text(row["trainable_parameters"] * 1.01, row[mean_metric_col], row["gnn_operator"])
         axes[1].set_title("Performance vs. Model Complexity", fontsize=14, weight="bold")
         axes[1].set_xlabel("Trainable Parameters")
         axes[1].set_ylabel(f"Mean {metric.replace('/', ' ').title()}")
@@ -86,7 +121,10 @@ class Analysis:
         plt.close()
         print("Performance vs. complexity plots saved.")
 
-        print("\n--- Analyzing Cross-Evaluation Results ---")
+    def _plot_cross_eval_heatmap(self, cross_df, metric, output_dir):
+        if "cross_eval_dataset" not in cross_df.columns:
+            print("Skipping cross-evaluation heatmap: 'cross_eval_dataset' column not found.")
+            return
 
         pivot_table = cross_df.pivot_table(
             index="gnn_operator", columns="cross_eval_dataset", values=metric, aggfunc="mean"
@@ -101,5 +139,3 @@ class Analysis:
         plt.savefig(output_dir / "cross_eval_heatmap.svg")
         plt.close()
         print("Cross-evaluation heatmap saved.")
-
-        print("\n--- Analysis complete. ---")

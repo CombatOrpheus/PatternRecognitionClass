@@ -28,14 +28,6 @@ This section contains all parameters related to file paths and experiment naming
   - Default: `"results/analysis_plots"`
 - `log_dir`: The directory to save Lightning logs.
   - Default: `"lightning_logs"`
-- `exp_name`: The name of the experiment.
-  - Default: `"gnn_spn_experiment"`
-- `experiment_dir`: The path to the main experiment log directory for testing models.
-  - Default: `"lightning_logs/gnn_spn_experiment"`
-- `data_dir`: The directory containing the `.processed` test files for the test script.
-  - Default: `"../Data"`
-- `output_file`: The path to the output Parquet file for the test script results.
-  - Default: `"../results/cross_dataset_evaluation.parquet"`
 
 ## `[model]` - Homogeneous Model Configuration
 
@@ -47,8 +39,8 @@ This section contains parameters for the homogeneous GNN models.
 - `prediction_level`: The prediction level, either "node" or "graph".
   - Default: `"graph"`
   - Choices: `["node", "graph"]`
-- `gnn_operator`: The GNN operator to use.
-  - Default: `"gcn"`
+- `gnn_operator`: A list of GNN operators to use for optimization and training.
+  - Default: `["gcn"]`
   - Choices: `["gcn", "tag", "cheb", "sgc", "ssg", "mixed"]`
 
 ## `[training]` - Homogeneous Model Training
@@ -70,14 +62,10 @@ This section contains parameters for training the homogeneous GNN models.
 
 This section contains parameters for hyperparameter optimization of the homogeneous GNN models.
 
-- `all_operators`: If `true`, runs optimization for all operators.
-  - Default: `false`
 - `n_trials`: The number of optimization trials.
   - Default: `100`
 - `timeout`: The timeout for the study in seconds.
   - Default: `7200`
-- `study_name`: The base name for the Optuna study.
-  - Default: `"gnn_spn_optimization"`
 
 ## `[hetero_model]` - Heterogeneous Model Configuration
 
@@ -110,3 +98,10 @@ This section contains parameters for hyperparameter optimization of the heteroge
   - Default: `7200`
 - `study_name`: The base name for the Optuna study.
   - Default: `"hetero_gnn_spn_optimization"`
+
+## `[cross_validation]` - Cross-Validation Configuration
+
+This section contains parameters for the cross-validation script.
+
+- `datasets`: A list of specific raw dataset filenames (e.g., `"GridData_DS2_all_data.processed"`) to run cross-validation against. If the list is empty, the script will run against all available datasets found in the processed data directory, excluding the model's own training and testing sets.
+  - Default: `[]`

@@ -1,5 +1,6 @@
 import argparse
-import typing
+import logging
+import shutil
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -13,12 +14,15 @@ from torch.utils.data import random_split
 from tqdm import tqdm
 
 from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model, MixedGNN_SPN_Model
-from src.PetriNets import SPNAnalysisResultLabel
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
+from src.name_utils import generate_experiment_name
 
 pl.seed_everything(42, workers=True)
+# Suppress verbose hardware information from PyTorch Lightning
+logging.getLogger("lightning.pytorch.utilities.rank_zero").setLevel(logging.ERROR)
+logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.ERROR)
 
 
 def objective(
@@ -27,6 +31,7 @@ def objective(
     train_dataset: HomogeneousSPNDataset,
     val_dataset: HomogeneousSPNDataset,
     label_scaler: StandardScaler,
+    study_name: str,
 ) -> float:
     """The Optuna objective function."""
     gnn_operator = config.gnn_operator
@@ -34,7 +39,7 @@ def objective(
         "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
         "hidden_dim": trial.suggest_categorical("hidden_dim", [8, 16, 32, 64, 128, 256]),
         "num_layers_mlp": trial.suggest_int("num_layers_mlp", 1, 5),
-        "batch_size": trial.suggest_categorical("batch_size", [256, 512, 1024, 2048]),
+        "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512, 1024]),
         "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
     }
 
@@ -83,16 +88,14 @@ def objective(
             **model_params,
         )
 
-    logger = TensorBoardLogger(
-        save_dir="optuna_logs", name=f"{config.study_name}_{gnn_operator}", version=f"trial_{trial.number}"
-    )
+    logger = TensorBoardLogger(save_dir="optuna_logs", name=study_name, version=f"trial_{trial.number}")
     trainer = pl.Trainer(
         max_epochs=config.max_epochs,
         accelerator="auto",
         devices="auto",
         logger=logger,
         callbacks=[
-            EarlyStopping(monitor="val/loss", patience=config.patience, mode="min"),
+            EarlyStopping(monitor="val/loss", patience=config.patience, mode="min", verbose=False),
             PyTorchLightningPruningCallback(trial, monitor="val/loss"),
         ],
         enable_model_summary=False,
@@ -109,12 +112,10 @@ def objective(
     return trainer.callback_metrics["val/loss"].item()
 
 
-def main():
+def main(config, config_path):
     """Main function to run the hyperparameter optimization study."""
-    config = load_config()
-
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
-    operators_to_run = ["gcn", "tag", "cheb", "sgc", "ssg", "mixed"] if config.optimization.all_operators else [config.model.gnn_operator]
+    operators_to_run = config.model.gnn_operator
 
     print("--- Pre-loading and processing data ---")
     train_dataset = HomogeneousSPNDataset(
@@ -134,14 +135,25 @@ def main():
 
     print("Data loaded successfully.")
 
+    base_exp_name = generate_experiment_name(config.io.train_file, config.io.test_file, config.model.label)
+
     for gnn_operator in tqdm(operators_to_run, desc="Total Optimization Progress"):
         # Create a copy of the config to avoid modification across loops
-        run_config = argparse.Namespace(**vars(config.io), **vars(config.model), **vars(config.training), **vars(config.optimization))
+        run_config = argparse.Namespace(
+            **vars(config.io), **vars(config.model), **vars(config.training), **vars(config.optimization)
+        )
         run_config.gnn_operator = gnn_operator
         if gnn_operator == "mixed":
             run_config.prediction_level = "graph"
-        study_name = f"{run_config.study_name}_{run_config.gnn_operator}"
+        study_name = f"{base_exp_name}-{gnn_operator}"
         storage_name = f"sqlite:///{run_config.studies_dir / study_name}.db"
+
+        # --- Save config for reproducibility ---
+        config_save_path = run_config.studies_dir / f"{study_name}_config.yaml"
+        if not config_save_path.exists():
+            # Assuming load_config() returns an object with a 'config_path' attribute
+            shutil.copy(config_path, config_save_path)
+            print(f"Saved configuration for '{study_name}' to {config_save_path}")
 
         study = optuna.create_study(
             study_name=study_name,
@@ -158,7 +170,7 @@ def main():
                 study.set_user_attr(key, value)
 
         study.optimize(
-            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler),
+            lambda trial: objective(trial, run_config, train_split, val_split, label_scaler, study_name),
             n_trials=run_config.n_trials,
             timeout=run_config.timeout,
             show_progress_bar=False,
@@ -176,4 +188,5 @@ def main():
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    main()
+    config, config_path = load_config()
+    main(config, config_path)

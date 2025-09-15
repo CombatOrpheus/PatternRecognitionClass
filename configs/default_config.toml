@@ -3,37 +3,31 @@
 [io]
 root = "Processed Data"
 raw_data_dir = "Data"
-train_file = "GridData_DS4_all_data.processed"
+train_file = "GridData_DS1_all_data.processed"
 test_file = "GridData_DS3_all_data.processed"
 val_file = ""
-studies_dir = "all-conv-training"
+studies_dir = "optuna_studies"
 state_dict_dir = "results/state_dicts"
-stats_results_file = "all_convolutions_DS4-DS3.parquet"
+stats_results_file = "results/statistical_results.parquet"
 cross_eval_results_file = "results/cross_dataset_evaluation.parquet"
 output_dir = "results/analysis_plots"
 log_dir = "lightning_logs"
-exp_name = "DS4-DS3-average_firing_rate"
-experiment_dir = "lightning_logs/gnn_spn_experiment"
-data_dir = "Data"
-output_file = "results/cross_dataset_evaluation.parquet"
 
 [model]
-label = "average_firing_rates"
+label = "average_tokens_per_place"
 prediction_level = "node"
-gnn_operator = "all"
+gnn_operator = ["cheb"]
 
 [training]
-num_runs = 100
+num_runs = 1
 num_workers = 8
-max_epochs = 100
+max_epochs = 1
 patience = 5
-val_split = 0.2
+val_split = 0.3
 
 [optimization]
-all_operators = false
-n_trials = 100
+n_trials = 1
 timeout = 7200
-study_name = "gnn_spn_optimization"
 
 [hetero_model]
 gnn_operator = "rgat"
@@ -48,3 +42,6 @@ all_operators = false
 n_trials = 100
 timeout = 7200
 study_name = "hetero_gnn_spn_optimization"
+
+[cross_validation]
+datasets = []

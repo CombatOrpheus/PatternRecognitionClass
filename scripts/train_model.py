@@ -1,5 +1,4 @@
 import argparse
-import json
 from pathlib import Path
 from typing import List
 
@@ -10,38 +9,16 @@ import torch
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from tqdm import tqdm
 
+from src.CrossValidation import CrossValidator
 from src.HomogeneousModels import BaseGNN_SPN_Model, GraphGNN_SPN_Model, MixedGNN_SPN_Model, NodeGNN_SPN_Model
 from src.SPNDataModule import SPNDataModule
 from src.SPNDatasets import HomogeneousSPNDataset
 from src.config_utils import load_config
+from src.name_utils import generate_experiment_name
 
 # Base seed for ensuring reproducibility of statistical runs
 BASE_SEED = 42
 pl.seed_everything(BASE_SEED, workers=True)
-
-
-def select_studies(studies_dir: Path) -> List[Path]:
-    """Scans for and allows user to select Optuna studies to run."""
-    db_files = sorted(list(studies_dir.glob("*.db")))
-    if not db_files:
-        print(f"No Optuna study (.db) files found in '{studies_dir}'.")
-        return []
-
-    print("\nAvailable studies found:")
-    for i, db_path in enumerate(db_files):
-        print(f"  [{i + 1}] {db_path.name}")
-
-    while True:
-        try:
-            selection = input("Enter study numbers to run (e.g., 1,3 or 'all'): ")
-            if selection.lower() == "all":
-                return db_files
-            selected_indices = [int(i.strip()) - 1 for i in selection.split(",")]
-            if all(0 <= i < len(db_files) for i in selected_indices):
-                return [db_files[i] for i in selected_indices]
-            print("Error: Selection out of range.")
-        except ValueError:
-            print("Invalid input.")
 
 
 def load_params_from_study(study_db_path: Path) -> dict:
@@ -55,7 +32,7 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
     """Instantiates the model based on the provided arguments."""
     model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
     model_class = model_classes.get(
-        run_config.gnn_operator if run_config.gnn_operator == "mixed" else run_config.prediction_level
+        run_config.gnn_operator_name if run_config.gnn_operator_name == "mixed" else run_config.prediction_level
     )
 
     model_kwargs = vars(run_config).copy()
@@ -70,49 +47,52 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
 
 
 def run_single_training_run(
-    run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule
-) -> tuple[str, dict]:
-    """Trains one model instance and returns its artifact path and test results."""
+    run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule, exp_name: str
+) -> tuple[pl.LightningModule, dict]:
+    """
+    Trains one model instance, saves its checkpoint, and returns the in-memory
+    model with the best weights and its test results.
+    """
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
 
     model = setup_model(run_config, data_module.num_node_features)
 
     logger = pl.loggers.TensorBoardLogger(
-        save_dir=str(run_config.log_dir), name=run_config.exp_name, version=f"{run_config.gnn_operator}_run_{run_id}"
+        save_dir=str(run_config.log_dir),
+        name=exp_name,
+        version=f"{run_config.gnn_operator_name}_run_{run_id}",
     )
+
+    # Early stopping will restore the best model weights at the end of training
+    early_stopping_callback = EarlyStopping(monitor="val/loss", patience=run_config.patience, mode="min")
     checkpoint_callback = ModelCheckpoint(monitor="val/loss", mode="min", filename="best")
 
     trainer = pl.Trainer(
         max_epochs=run_config.max_epochs,
         accelerator="auto",
         logger=logger,
-        callbacks=[checkpoint_callback, EarlyStopping(monitor="val/loss", patience=run_config.patience)],
+        callbacks=[checkpoint_callback, early_stopping_callback],
         enable_progress_bar=False,
         enable_model_summary=False,
         log_every_n_steps=1,
     )
     trainer.fit(model, datamodule=data_module)
 
-    best_model_path = trainer.checkpoint_callback.best_model_path
-    if not best_model_path:
+    best_ckpt_path = trainer.checkpoint_callback.best_model_path
+    if not best_ckpt_path or not Path(best_ckpt_path).exists():
         raise FileNotFoundError("Best model checkpoint not found.")
 
-    # --- Save model artifacts (state_dict and hparams) ---
+    # --- Save model checkpoint for persistence ---
     artifact_dir = (
-        run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{run_id}_seed_{seed}"
+        run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{run_id}_seed_{seed}"
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
+    final_ckpt_path = artifact_dir / "best_model.ckpt"
+    Path(best_ckpt_path).rename(final_ckpt_path)
 
-    # Instead of extracting the state_dict, we copy the whole checkpoint file for robust loading
-    Path(best_model_path).rename(artifact_dir / "best_model.ckpt")
-    hparams_path = artifact_dir / "hparams.json"
-    hparams_to_save = {k: v for k, v in vars(run_config).items() if isinstance(v, (str, int, float, bool))}
-    with open(hparams_path, "w") as f:
-        json.dump(hparams_to_save, f, indent=4)
-    # ---
-
-    results = trainer.test(ckpt_path=best_model_path, datamodule=data_module, verbose=False)[0]
+    # The `model` object has been updated in-place by the trainer and has the best weights.
+    results = trainer.test(model=model, datamodule=data_module, verbose=False)[0]
     results.update(
         {
             "run_id": run_id,
@@ -121,18 +101,40 @@ def run_single_training_run(
             "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
-    return str(artifact_dir), results
+    return model, results
 
 
-def main():
+def main(config):
     """Main function to orchestrate the entire experiment workflow."""
-    config = load_config()
+    cross_validator = CrossValidator(config)
 
-    selected_studies = select_studies(config.io.studies_dir)
+    studies_dir = config.io.studies_dir
+
+    # Construct the search pattern based on the current configuration
+    exp_name = generate_experiment_name(config.io.train_file, config.io.test_file, config.model.label)
+    search_pattern = f"{exp_name}-*.db"
+
+    # Find all studies matching the pattern
+    all_matching_studies = sorted(list(studies_dir.glob(search_pattern)))
+
+    # Filter studies to only include those with operators specified in the config
+    selected_studies = [
+        study_path
+        for study_path in all_matching_studies
+        if study_path.stem.split("-")[-1] in config.model.gnn_operator
+    ]
+
     if not selected_studies:
+        print(f"No Optuna studies found matching the current configuration in '{studies_dir}'.")
+        print(f"  (Searched for pattern: '{search_pattern}' with operators: {config.model.gnn_operator})")
         return
 
+    print("\nFound and training the following studies:")
+    for study_path in selected_studies:
+        print(f"  - {study_path.name}")
+
     all_stats_results = []
+    all_cv_results = []
 
     for study_path in selected_studies:
         study_params = load_params_from_study(study_path)
@@ -143,7 +145,10 @@ def main():
         )
         run_config.__dict__.update(study_params)
 
-        print(f"\n--- Training Phase for operator: {run_config.gnn_operator} ---")
+        # Rename for consistency with model's __init__
+        run_config.gnn_operator_name = run_config.gnn_operator
+
+        print(f"\n--- Training Phase for operator: {run_config.gnn_operator_name} ---")
 
         train_dataset = HomogeneousSPNDataset(
             str(run_config.root), str(run_config.raw_data_dir), str(run_config.train_file), run_config.label
@@ -165,35 +170,26 @@ def main():
         total_params = sum(p.numel() for p in model_for_summary.parameters())
         trainable_params = sum(p.numel() for p in model_for_summary.parameters() if p.requires_grad)
 
-        for i in tqdm(range(run_config.num_runs), desc=f"Training {run_config.gnn_operator}"):
+        for i in tqdm(range(run_config.num_runs), desc=f"Training {run_config.gnn_operator_name}"):
             seed = BASE_SEED + i
             artifact_dir_path = (
-                run_config.state_dict_dir / run_config.exp_name / f"{run_config.gnn_operator}_run_{i}_seed_{seed}"
+                run_config.state_dict_dir / exp_name / f"{run_config.gnn_operator_name}_run_{i}_seed_{seed}"
             )
 
             # Check if this run has already been completed
-            hparams_path = artifact_dir_path / "hparams.json"
-            if artifact_dir_path.exists() and (artifact_dir_path / "best_model.pt").exists() and hparams_path.exists():
-                with open(hparams_path, "r") as f:
-                    try:
-                        existing_hparams = json.load(f)
-                        current_hparams = {
-                            k: v for k, v in vars(run_config).items() if isinstance(v, (str, int, float, bool))
-                        }
+            if (artifact_dir_path / "best_model.ckpt").exists():
+                tqdm.write(f"Skipping run {i} for {run_config.gnn_operator_name}: completed run found.")
+                continue
 
-                        if existing_hparams == current_hparams:
-                            tqdm.write(
-                                f"Skipping run {i} for {run_config.gnn_operator}: identical completed run found."
-                            )
-                            continue
-                        else:
-                            tqdm.write(
-                                f"Re-running run {i} for {run_config.gnn_operator}: hyperparameters have changed."
-                            )
-                    except json.JSONDecodeError:
-                        tqdm.write(f"Re-running run {i} for {run_config.gnn_operator}: corrupted hparams.json found.")
+            trained_model, stats_result = run_single_training_run(
+                run_config, i, data_module, exp_name
+            )
 
-            artifact_dir, stats_result = run_single_training_run(run_config, i, data_module)
+            # --- Cross-validation ---
+            cv_results_for_model = cross_validator.cross_validate_single_model(
+                trained_model, run_config, i, seed
+            )
+            all_cv_results.extend(cv_results_for_model)
 
             hparams_to_save = vars(run_config).copy()
             hparams_to_save.update({"total_parameters": total_params, "trainable_parameters": trainable_params})
@@ -212,7 +208,20 @@ def main():
         pd.DataFrame(all_stats_results).to_parquet(config.io.stats_results_file, index=False)
         print(f"\nStatistical results saved to {config.io.stats_results_file}")
 
+    # --- Final saving of cross-validation results ---
+    if all_cv_results:
+        for r in all_cv_results:
+            for k, v in r.items():
+                if isinstance(v, Path):
+                    r[k] = str(v)
+
+        cv_results_file = config.io.cross_eval_results_file
+        cv_results_file.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(all_cv_results).to_parquet(cv_results_file, index=False)
+        print(f"\nCross-validation results saved to {cv_results_file}")
+
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    main()
+    config, _ = load_config()
+    main(config)

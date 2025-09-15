@@ -47,7 +47,7 @@ Follow these instructions to set up the project locally.
 3.  **Install dependencies:**
     This command ensures your environment has the exact package versions specified in `pyproject.toml`.
     ```bash
-    uv pip sync pyproject.toml
+    uv sync
     ```
 
 ## MLOps Workflow

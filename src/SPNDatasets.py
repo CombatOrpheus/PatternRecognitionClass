@@ -1,10 +1,10 @@
-"""
-This module defines custom PyTorch Geometric Dataset classes for handling
-the pre-processing and loading of SPN data.
+"""This module defines custom PyTorch Geometric `Dataset` classes for handling
+the preprocessing and loading of SPN data.
 
-**MODIFIED**: This version creates unique processed filenames based on the
-raw input file to prevent data caching conflicts and adds properties to
-easily access dataset metadata like the number of features.
+It provides a base class and specific implementations for homogeneous,
+heterogeneous, and reachability graph representations. A key feature is the
+creation of unique processed filenames based on the raw input file to prevent
+data caching conflicts.
 """
 
 from pathlib import Path
@@ -20,9 +20,11 @@ from src.PetriNets import load_spn_data_lazily, SPNAnalysisResultLabel
 
 
 class BaseSPNDataset(InMemoryDataset):
-    """
-    An abstract base class for our custom SPN datasets.
-    It handles the file finding and basic setup.
+    """An abstract base class for custom SPN datasets.
+
+    This class handles the file finding, basic setup, and provides properties
+    for accessing dataset metadata. Subclasses must implement the `process`
+    method.
     """
 
     def __init__(
@@ -34,6 +36,18 @@ class BaseSPNDataset(InMemoryDataset):
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
     ):
+        """Initializes the BaseSPNDataset.
+
+        Args:
+            root: The root directory where the dataset should be stored.
+            raw_data_dir: The directory where the raw data is located.
+            raw_file_name: The name of the raw data file.
+            label_to_predict: The specific analysis result to use as the label.
+            transform: A function/transform that takes in an object and
+                returns a transformed version.
+            pre_transform: A function/transform that takes in an object and
+                returns a transformed version.
+        """
         self.raw_data_dir = Path(raw_data_dir)
         self.raw_file_name = Path(raw_file_name)
         self.label_to_predict = label_to_predict
@@ -42,26 +56,31 @@ class BaseSPNDataset(InMemoryDataset):
 
     @property
     def raw_dir(self) -> str:
+        """The directory where the raw data is stored."""
         return str(self.raw_data_dir)
 
     @property
     def raw_file_names(self) -> List[str]:
+        """The name of the raw file."""
         return [self.raw_file_name.name]
 
     @property
     def processed_file_names(self) -> str:
+        """The name of the processed file, unique to the raw file and label."""
         sanitized_name = self.raw_file_name.stem
         return f"data_{sanitized_name}_{self.label_to_predict}.pt"
 
     def download(self):
+        """This dataset does not support downloading."""
         pass
 
     def process(self):
+        """Abstract method for processing the raw data."""
         raise NotImplementedError("Subclasses must implement the process method.")
 
     @property
     def num_node_features(self) -> Union[int, Dict[str, int]]:
-        """Returns the number of features per node type."""
+        """The number of features per node type."""
         if not hasattr(self, "_data") or self._data is None:
             return 0
         if self.data.is_hetero:
@@ -70,7 +89,7 @@ class BaseSPNDataset(InMemoryDataset):
 
     @property
     def num_edge_features(self) -> Union[int, Dict[str, int]]:
-        """Returns the number of features per edge type."""
+        """The number of features per edge type."""
         if not hasattr(self, "_data") or self._data is None:
             return 0
         if self.data.is_hetero:
@@ -79,9 +98,10 @@ class BaseSPNDataset(InMemoryDataset):
 
 
 class HomogeneousSPNDataset(BaseSPNDataset):
-    """Creates a pre-processed dataset of homogeneous graph representations of SPNs."""
+    """Creates a preprocessed dataset of homogeneous graph representations of SPNs."""
 
     def process(self):
+        """Processes the raw JSON-L data into a list of homogeneous `Data` objects."""
         data_list = []
         raw_path = Path(self.raw_paths[0])
         for spn_data in tqdm(load_spn_data_lazily(Path(raw_path)), desc=f"Processing {self.raw_file_name}"):
@@ -101,9 +121,10 @@ class HomogeneousSPNDataset(BaseSPNDataset):
 
 
 class HeterogeneousSPNDataset(BaseSPNDataset):
-    """Creates a pre-processed dataset of heterogeneous graph representations of SPNs."""
+    """Creates a preprocessed dataset of heterogeneous graph representations of SPNs."""
 
     def process(self):
+        """Processes the raw JSON-L data into a list of `HeteroData` objects."""
         data_list = []
         raw_path = Path(self.raw_paths[0])
         for spn_data in tqdm(load_spn_data_lazily(Path(raw_path)), desc=f"Processing {self.raw_file_name}"):
@@ -122,9 +143,15 @@ class HeterogeneousSPNDataset(BaseSPNDataset):
 
 
 class ReachabilityGraphInMemoryDataset(BaseSPNDataset):
-    """Creates a pre-processed dataset from SPN reachability graphs, with padding."""
+    """Creates a preprocessed dataset from SPN reachability graphs.
+
+    This class processes the reachability graph of each SPN, pads the node
+    features to ensure consistency across the dataset, and stores the result
+    as a list of `Data` objects.
+    """
 
     def process(self):
+        """Processes raw data to create reachability graph `Data` objects."""
         data_list = []
         raw_path = Path(self.raw_paths[0])
         all_spn_data = list(load_spn_data_lazily(Path(raw_path)))

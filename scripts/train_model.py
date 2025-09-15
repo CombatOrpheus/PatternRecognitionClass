@@ -1,6 +1,21 @@
+"""This script orchestrates the model training and evaluation pipeline.
+
+It identifies completed Optuna hyperparameter optimization studies, loads the
+best parameters for each, and then runs a specified number of training runs
+for each model configuration to ensure statistical significance.
+
+For each run, it:
+1.  Seeds everything for reproducibility.
+2.  Initializes the model with the best hyperparameters.
+3.  Trains the model with early stopping.
+4.  Saves the best model checkpoint.
+5.  Evaluates the model on the test set.
+6.  Performs cross-validation against a broader set of datasets.
+7.  Aggregates and saves all statistical and cross-validation results.
+"""
 import argparse
 from pathlib import Path
-from typing import List
+from typing import List, Tuple, Dict
 
 import lightning.pytorch as pl
 import optuna
@@ -22,14 +37,31 @@ pl.seed_everything(BASE_SEED, workers=True)
 
 
 def load_params_from_study(study_db_path: Path) -> dict:
-    """Loads the best hyperparameters from an Optuna study."""
+    """Loads the best hyperparameters and user attributes from an Optuna study.
+
+    Args:
+        study_db_path: The path to the Optuna study's SQLite database file.
+
+    Returns:
+        A dictionary containing the best trial's parameters and study-level
+        user attributes.
+    """
     storage_url = f"sqlite:///{study_db_path}"
     study = optuna.load_study(study_name=None, storage=storage_url)
     return {**study.best_trial.params, **study.user_attrs}
 
 
 def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseGNN_SPN_Model:
-    """Instantiates the model based on the provided arguments."""
+    """Instantiates a GNN model based on the provided configuration.
+
+    Args:
+        run_config: A namespace containing the model's configuration and
+            hyperparameters.
+        node_features_dim: The dimensionality of the input node features.
+
+    Returns:
+        An instantiated PyTorch Lightning GNN model.
+    """
     model_classes = {"node": NodeGNN_SPN_Model, "graph": GraphGNN_SPN_Model, "mixed": MixedGNN_SPN_Model}
     model_class = model_classes.get(
         run_config.gnn_operator_name if run_config.gnn_operator_name == "mixed" else run_config.prediction_level
@@ -48,10 +80,26 @@ def setup_model(run_config: argparse.Namespace, node_features_dim: int) -> BaseG
 
 def run_single_training_run(
     run_config: argparse.Namespace, run_id: int, data_module: SPNDataModule, exp_name: str
-) -> tuple[pl.LightningModule, dict]:
-    """
-    Trains one model instance, saves its checkpoint, and returns the in-memory
-    model with the best weights and its test results.
+) -> Tuple[pl.LightningModule, Dict]:
+    """Trains and evaluates a single model instance.
+
+    This function handles the complete lifecycle for one training run: setting
+    the seed, initializing the model and trainer, training with early stopping,
+    saving the best checkpoint, and running the final test evaluation.
+
+    Args:
+        run_config: The configuration for this specific run.
+        run_id: The identifier for this run (used for seeding).
+        data_module: The configured SPNDataModule.
+        exp_name: The name of the experiment for logging.
+
+    Returns:
+        A tuple containing:
+        - The trained model with the best weights loaded.
+        - A dictionary of test results and metadata.
+
+    Raises:
+        FileNotFoundError: If the best model checkpoint cannot be found after training.
     """
     seed = BASE_SEED + run_id
     pl.seed_everything(seed, workers=True)
@@ -104,8 +152,15 @@ def run_single_training_run(
     return model, results
 
 
-def main(config):
-    """Main function to orchestrate the entire experiment workflow."""
+def main(config: argparse.Namespace):
+    """Main function to orchestrate the training and evaluation workflow.
+
+    It finds completed Optuna studies, then for each, it runs multiple
+    training instances to gather statistical results and performs cross-validation.
+
+    Args:
+        config: The main configuration namespace.
+    """
     cross_validator = CrossValidator(config)
 
     studies_dir = config.io.studies_dir

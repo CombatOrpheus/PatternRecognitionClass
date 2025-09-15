@@ -24,12 +24,20 @@ from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
 
 class LightningSPNModule(pl.LightningModule):
-    """
-    A base PyTorch Lightning module for SPN models. Encapsulates shared logic
-    for training, validation, testing, and optimizer configuration.
+    """A base PyTorch Lightning module for SPN models.
+
+    Encapsulates shared logic for training, validation, testing, optimizer
+    configuration, and metric calculation for heterogeneous graph models.
+    It tracks metrics both per node type and in aggregate.
     """
 
     def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5):
+        """Initializes the LightningSPNModule.
+
+        Args:
+            learning_rate: The learning rate for the optimizer.
+            weight_decay: The weight decay for the optimizer.
+        """
         super().__init__()
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
@@ -65,6 +73,18 @@ class LightningSPNModule(pl.LightningModule):
             setattr(self, f"{split}_agg_metrics", agg_metrics)
 
     def _common_step(self, batch: HeteroData, prefix: str) -> torch.Tensor:
+        """Performs a common step for training, validation, and testing.
+
+        This method computes the loss and logs metrics for each node type and
+        in aggregate.
+
+        Args:
+            batch: The heterogeneous data batch.
+            prefix: The prefix for logging (e.g., "train", "val", "test").
+
+        Returns:
+            The total loss for the batch.
+        """
         output_dict = self(batch)
         total_loss = 0.0
         metrics_dict = getattr(self, f"{prefix}_metrics")
@@ -103,31 +123,80 @@ class LightningSPNModule(pl.LightningModule):
         return total_loss
 
     def training_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
+        """The training step for the model.
+
+        Args:
+            batch: The training data batch.
+            batch_idx: The index of the batch.
+
+        Returns:
+            The loss for the training batch.
+        """
         return self._common_step(batch, "train")
 
     def validation_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
+        """The validation step for the model.
+
+        Args:
+            batch: The validation data batch.
+            batch_idx: The index of the batch.
+
+        Returns:
+            The loss for the validation batch.
+        """
         return self._common_step(batch, "val")
 
     def test_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
+        """The test step for the model.
+
+        Args:
+            batch: The test data batch.
+            batch_idx: The index of the batch.
+
+        Returns:
+            The loss for the test batch.
+        """
         loss = self._common_step(batch, "test")
         return loss
 
     def configure_optimizers(self) -> Dict[str, Any]:
+        """Configures the optimizer for the model.
+
+        Returns:
+            A dictionary containing the optimizer.
+        """
         return {
             "optimizer": torch.optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         }
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
+        """The forward pass of the model.
+
+        This method must be implemented by subclasses.
+
+        Args:
+            batch: The input data batch.
+
+        Raises:
+            NotImplementedError: If the method is not implemented by a subclass.
+        """
         raise NotImplementedError("Subclasses must implement the forward method.")
 
 
 class BaseHeteroGNN(LightningSPNModule, ABC):
-    """
-    An abstract base class for heterogeneous GNN models.
-    It implements the shared forward pass logic.
+    """An abstract base class for heterogeneous GNN models.
+
+    It implements the shared forward pass logic and initializes the model's
+    convolutional and linear layers.
     """
 
     def __init__(self, **kwargs):
+        """Initializes the BaseHeteroGNN.
+
+        Args:
+            **kwargs: Keyword arguments for the model, including learning_rate
+                and weight_decay.
+        """
         super().__init__(kwargs.get("learning_rate", 1e-3), kwargs.get("weight_decay", 1e-5))
         self.save_hyperparameters()
         self.convs = ModuleList()
@@ -135,10 +204,26 @@ class BaseHeteroGNN(LightningSPNModule, ABC):
 
     @abstractmethod
     def _create_conv_layers(self) -> None:
-        """Must be implemented by subclasses to build the GNN layer stack."""
+        """Abstract method to create the GNN convolution layers.
+
+        This method must be implemented by subclasses to build the specific
+        GNN layer stack.
+        """
         pass
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
+        """The forward pass for the heterogeneous GNN model.
+
+        It applies the convolutional layers sequentially and then the final
+        linear layers to produce node-level predictions.
+
+        Args:
+            batch: The heterogeneous data batch.
+
+        Returns:
+            A dictionary of tensors, where keys are node types and values are
+            the predictions for the nodes of that type.
+        """
         x_dict = batch.x_dict
         for conv in self.convs:
             extra_args = {}
@@ -152,8 +237,10 @@ class BaseHeteroGNN(LightningSPNModule, ABC):
 
 
 class RGAT_SPN_Model(BaseHeteroGNN):
-    """
-    An SPN evaluation model using Relational Graph Attention (RGAT) layers.
+    """An SPN evaluation model using Relational Graph Attention (RGAT) layers.
+
+    This model is designed for heterogeneous graphs and uses RGATConv to handle
+    different relation types.
     """
 
     def __init__(
@@ -166,11 +253,24 @@ class RGAT_SPN_Model(BaseHeteroGNN):
         edge_dim: int,
         **kwargs,
     ):
+        """Initializes the RGAT_SPN_Model.
+
+        Args:
+            in_channels_dict: A dictionary mapping node types to their input
+                feature dimensions.
+            hidden_channels: The number of hidden channels in the GNN layers.
+            out_channels: The number of output channels (prediction dimension).
+            num_heads: The number of attention heads in the RGAT layers.
+            num_layers: The number of GNN layers.
+            edge_dim: The dimension of edge features.
+            **kwargs: Additional keyword arguments for the base class.
+        """
         super().__init__(**kwargs)
         self.save_hyperparameters()
         self._create_conv_layers()
 
     def _create_conv_layers(self) -> None:
+        """Creates the stack of RGAT convolutional layers."""
         in_channels = self.hparams.in_channels_dict
         layer_output_dim = self.hparams.hidden_channels * self.hparams.num_heads
 
@@ -195,8 +295,10 @@ class RGAT_SPN_Model(BaseHeteroGNN):
 
 
 class HEAT_SPN_Model(BaseHeteroGNN):
-    """
-    An SPN evaluation model using Heterogeneous Edge-based Attention Transformer (HEAT) layers.
+    """An SPN evaluation model using Heterogeneous Edge-Attention Transformer (HEAT) layers.
+
+    This model leverages HEATConv, which is suitable for graphs with varied
+    node and edge types and their features.
     """
 
     def __init__(
@@ -213,11 +315,28 @@ class HEAT_SPN_Model(BaseHeteroGNN):
         edge_type_emb_dim: int,
         **kwargs,
     ):
+        """Initializes the HEAT_SPN_Model.
+
+        Args:
+            in_channels_dict: A dictionary mapping node types to their input
+                feature dimensions.
+            hidden_channels: The number of hidden channels in the GNN layers.
+            out_channels: The number of output channels (prediction dimension).
+            num_layers: The number of GNN layers.
+            num_heads: The number of attention heads in the HEAT layers.
+            edge_dim: The dimension of edge features.
+            num_node_types: The total number of node types.
+            num_edge_types: The total number of edge types.
+            node_type_emb_dim: The embedding dimension for node types.
+            edge_type_emb_dim: The embedding dimension for edge types.
+            **kwargs: Additional keyword arguments for the base class.
+        """
         super().__init__(**kwargs)
         self.save_hyperparameters()
         self._create_conv_layers()
 
     def _create_conv_layers(self) -> None:
+        """Creates the stack of HEAT convolutional layers."""
         in_channels = self.hparams.in_channels_dict
         layer_output_dim = self.hparams.hidden_channels
 

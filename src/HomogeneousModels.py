@@ -1,9 +1,9 @@
-"""
-This module provides a flexible and modular PyTorch Lightning implementation of
+"""This module provides a flexible and modular PyTorch Lightning implementation of
 homogeneous Graph Neural Networks for evaluating Stochastic Petri Nets (SPNs).
 
 This refactored version uses MetricCollection for cleaner metric handling and
-the official torch_geometric.nn.models.MLP for the readout head.
+the official torch_geometric.nn.models.MLP for the readout head. It defines
+several GNN architectures for both graph-level and node-level prediction tasks.
 """
 
 from typing import Dict, Any, Literal
@@ -34,19 +34,26 @@ from torchmetrics.regression import (
 
 
 class BaseGNN_SPN_Model(pl.LightningModule):
-    """
-    A base class for GNN models that handles common functionality.
-    This includes metric instantiation, optimizer configuration, and the
-    basic training, validation, and test step logic.
+    """A base class for GNN models that handles common functionality.
+
+    This includes metric instantiation, optimizer configuration, and the basic
+    training, validation, and test step logic. Subclasses are expected to
+    implement the `_common_step` method.
     """
 
     def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5):
+        """Initializes the BaseGNN_SPN_Model.
+
+        Args:
+            learning_rate: The learning rate for the optimizer.
+            weight_decay: The weight decay for the optimizer.
+        """
         super().__init__()
         self.save_hyperparameters("learning_rate", "weight_decay")
         self._initialize_metrics()
 
     def _initialize_metrics(self):
-        """Instantiates regression metrics using MetricCollection."""
+        """Instantiates regression metrics using MetricCollection for each data split."""
         for split in ["train", "val", "test"]:
             collection = MetricCollection(
                 {
@@ -60,16 +67,48 @@ class BaseGNN_SPN_Model(pl.LightningModule):
             setattr(self, f"{split}_metrics", collection)
 
     def training_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
+        """The training step for the model.
+
+        Args:
+            batch: The training data batch.
+            batch_idx: The index of the batch.
+
+        Returns:
+            The loss for the training batch.
+        """
         return self._common_step(batch, "train")
 
     def validation_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
+        """The validation step for the model.
+
+        Args:
+            batch: The validation data batch.
+            batch_idx: The index of the batch.
+
+        Returns:
+            The loss for the validation batch.
+        """
         return self._common_step(batch, "val")
 
     def test_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
+        """The test step for the model.
+
+        Args:
+            batch: The test data batch.
+            batch_idx: The index of the batch.
+
+        Returns:
+            The loss for the test batch.
+        """
         loss = self._common_step(batch, "test")
         return loss
 
     def configure_optimizers(self) -> Dict[str, Any]:
+        """Configures the AdamW optimizer for the model.
+
+        Returns:
+            A dictionary containing the optimizer.
+        """
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
@@ -78,10 +117,33 @@ class BaseGNN_SPN_Model(pl.LightningModule):
         return {"optimizer": optimizer}
 
     def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
+        """A common step for training, validation, and testing.
+
+        This method must be implemented by subclasses.
+
+        Args:
+            batch: The data batch.
+            prefix: The prefix for logging (e.g., "train", "val", "test").
+
+        Raises:
+            NotImplementedError: If the method is not implemented by a subclass.
+        """
         raise NotImplementedError("Subclasses must implement the `_common_step` method.")
 
     def _get_gnn_layer(self, name: str, in_dim: int, out_dim: int) -> torch.nn.Module:
-        """Factory function to create a GNN layer based on its name."""
+        """Factory function to create a GNN layer based on its name.
+
+        Args:
+            name: The name of the GNN operator.
+            in_dim: The input dimension.
+            out_dim: The output dimension.
+
+        Returns:
+            A GNN layer module.
+
+        Raises:
+            ValueError: If the GNN operator name is not supported.
+        """
         name = name.lower()
         if name == "gcn":
             return GCNConv(in_dim, out_dim)
@@ -98,8 +160,10 @@ class BaseGNN_SPN_Model(pl.LightningModule):
 
 
 class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
-    """
-    A GNN model for **graph-level** prediction tasks on SPNs.
+    """A GNN model for graph-level prediction tasks on SPNs.
+
+    This model applies a stack of GNN layers, followed by a global pooling
+    operation and a final MLP to produce a single prediction for the entire graph.
     """
 
     def __init__(
@@ -115,6 +179,20 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
     ):
+        """Initializes the GraphGNN_SPN_Model.
+
+        Args:
+            node_features_dim: The dimension of node features.
+            hidden_dim: The dimension of the hidden layers.
+            out_channels: The dimension of the output.
+            num_layers: The number of GNN layers.
+            gnn_operator_name: The name of the GNN operator to use.
+            num_layers_mlp: The number of layers in the output MLP.
+            learning_rate: The learning rate for the optimizer.
+            weight_decay: The weight decay for the optimizer.
+            gnn_k_hops: The number of hops for GNNs like TAGConv.
+            gnn_alpha: The alpha parameter for SSGConv.
+        """
         super().__init__(learning_rate, weight_decay)
         self.save_hyperparameters()
 
@@ -132,6 +210,14 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         )
 
     def forward(self, batch: Data) -> torch.Tensor:
+        """The forward pass of the model.
+
+        Args:
+            batch: The data batch.
+
+        Returns:
+            The prediction tensor for the graph.
+        """
         x, edge_index, edge_attr, batch_map = (batch.x, batch.edge_index, batch.edge_attr, batch.batch)
         edge_weight = edge_attr.squeeze(-1) if edge_attr is not None and edge_attr.dim() > 1 else edge_attr
 
@@ -145,6 +231,15 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
 
     def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
+        """The common step for training, validation, and testing.
+
+        Args:
+            batch: The data batch.
+            prefix: The prefix for logging.
+
+        Returns:
+            The loss for the batch.
+        """
         y_pred = self(batch)
         y_true = batch.y.float()
 
@@ -162,8 +257,10 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
 
 
 class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
-    """
-    A GNN model for **node-level** prediction tasks on SPNs.
+    """A GNN model for node-level prediction tasks on SPNs.
+
+    This model applies a stack of GNN layers and a final MLP to produce a
+    prediction for each node in the graph.
     """
 
     def __init__(
@@ -179,6 +276,20 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
     ):
+        """Initializes the NodeGNN_SPN_Model.
+
+        Args:
+            node_features_dim: The dimension of node features.
+            hidden_dim: The dimension of the hidden layers.
+            out_channels: The dimension of the output.
+            num_layers: The number of GNN layers.
+            gnn_operator_name: The name of the GNN operator to use.
+            num_layers_mlp: The number of layers in the output MLP.
+            learning_rate: The learning rate for the optimizer.
+            weight_decay: The weight decay for the optimizer.
+            gnn_k_hops: The number of hops for GNNs like TAGConv.
+            gnn_alpha: The alpha parameter for SSGConv.
+        """
         super().__init__(learning_rate, weight_decay)
         self.save_hyperparameters()
 
@@ -196,6 +307,14 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         )
 
     def forward(self, batch: Data) -> torch.Tensor:
+        """The forward pass of the model.
+
+        Args:
+            batch: The data batch.
+
+        Returns:
+            The prediction tensor for the nodes.
+        """
         x, edge_index, edge_attr = batch.x, batch.edge_index, batch.edge_attr
         edge_weight = edge_attr.squeeze(-1) if edge_attr is not None and edge_attr.dim() > 1 else edge_attr
 
@@ -207,6 +326,18 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
 
     def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
+        """The common step for training, validation, and testing.
+
+        This step handles the logic for node-level predictions by masking the
+        output based on the node type (place or transition).
+
+        Args:
+            batch: The data batch.
+            prefix: The prefix for logging.
+
+        Returns:
+            The loss for the batch.
+        """
         y_pred_raw = self(batch)
         y_true = batch.y.float()
 
@@ -238,9 +369,10 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
 
 
 class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
-    """
-    A GNN model with a predefined sequence of different GNN layers
-    (GAT -> GCN -> GIN) for graph-level prediction.
+    """A GNN model with a predefined sequence of GAT, GCN, and GIN layers.
+
+    This model is designed for graph-level prediction and experiments with a
+    fixed, mixed-architecture of different GNN operators.
     """
 
     def __init__(
@@ -253,6 +385,17 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-5,
     ):
+        """Initializes the MixedGNN_SPN_Model.
+
+        Args:
+            node_features_dim: The dimension of node features.
+            hidden_dim: The dimension of the hidden layers.
+            out_channels: The dimension of the output.
+            num_layers_mlp: The number of layers in the output MLP.
+            heads: The number of attention heads for the GAT layer.
+            learning_rate: The learning rate for the optimizer.
+            weight_decay: The weight decay for the optimizer.
+        """
         super().__init__(learning_rate, weight_decay)
         self.save_hyperparameters()
 
@@ -282,6 +425,14 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         )
 
     def forward(self, batch: Data) -> torch.Tensor:
+        """The forward pass of the model.
+
+        Args:
+            batch: The data batch.
+
+        Returns:
+            The prediction tensor for the graph.
+        """
         x, edge_index, batch_map = batch.x, batch.edge_index, batch.batch
 
         # Apply layers sequentially with activations
@@ -298,7 +449,15 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
 
     def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
-        """Identical to GraphGNN_SPN_Model's common step."""
+        """The common step, identical to GraphGNN_SPN_Model's common step.
+
+        Args:
+            batch: The data batch.
+            prefix: The prefix for logging.
+
+        Returns:
+            The loss for the batch.
+        """
         y_pred = self(batch)
         y_true = batch.y.float()
 

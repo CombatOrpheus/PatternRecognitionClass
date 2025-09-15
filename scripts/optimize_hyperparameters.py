@@ -1,7 +1,15 @@
+"""This script runs a hyperparameter optimization study using Optuna.
+
+It iterates through a list of GNN operators specified in the configuration,
+creating and running a separate Optuna study for each. The script handles
+data loading, preprocessing, and splitting once before all studies to improve
+efficiency. Each study's results are saved to a unique SQLite database.
+"""
 import argparse
 import logging
 import shutil
 from pathlib import Path
+from typing import List
 
 import lightning.pytorch as pl
 import optuna
@@ -10,7 +18,7 @@ from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from optuna.integration import PyTorchLightningPruningCallback
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import random_split
+from torch.utils.data import random_split, Subset
 from tqdm import tqdm
 
 from src.HomogeneousModels import GraphGNN_SPN_Model, NodeGNN_SPN_Model, MixedGNN_SPN_Model
@@ -28,12 +36,32 @@ logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.ERROR)
 def objective(
     trial: optuna.Trial,
     config: argparse.Namespace,
-    train_dataset: HomogeneousSPNDataset,
-    val_dataset: HomogeneousSPNDataset,
+    train_dataset: Subset,
+    val_dataset: Subset,
     label_scaler: StandardScaler,
     study_name: str,
 ) -> float:
-    """The Optuna objective function."""
+    """The Optuna objective function to be minimized.
+
+    This function defines the hyperparameter search space, creates a model and
+    a data module, and trains the model using PyTorch Lightning. It returns the
+    validation loss, which Optuna uses to guide the search.
+
+    Args:
+        trial: An Optuna Trial object.
+        config: The configuration namespace.
+        train_dataset: The training dataset subset.
+        val_dataset: The validation dataset subset.
+        label_scaler: The pre-fitted scaler for labels.
+        study_name: The name of the Optuna study for logging purposes.
+
+    Returns:
+        The validation loss of the trained model.
+
+    Raises:
+        optuna.exceptions.TrialPruned: If the trial is pruned by the callback
+            or if an error occurs during training.
+    """
     gnn_operator = config.gnn_operator
     hyperparams = {
         "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
@@ -112,8 +140,16 @@ def objective(
     return trainer.callback_metrics["val/loss"].item()
 
 
-def main(config, config_path):
-    """Main function to run the hyperparameter optimization study."""
+def main(config: argparse.Namespace, config_path: Path):
+    """Runs the main hyperparameter optimization loop.
+
+    This function pre-loads and processes the dataset, then iterates through the
+    specified GNN operators, running an Optuna study for each one.
+
+    Args:
+        config: The main configuration namespace.
+        config_path: The path to the configuration file for reproducibility.
+    """
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)
     operators_to_run = config.model.gnn_operator
 

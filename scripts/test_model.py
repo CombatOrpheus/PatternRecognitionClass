@@ -1,9 +1,19 @@
+"""This script provides a robust mechanism for evaluating trained model
+checkpoints against a directory of test datasets.
+
+It is designed to be run after model training and is capable of:
+-   Dynamically loading different model architectures from their checkpoints.
+-   Inferring metadata (like experiment name and run ID) from file paths.
+-   Iterating through all checkpoints in a specified experiment directory.
+-   Evaluating each checkpoint against every `.processed` file in a data directory.
+-   Aggregating all evaluation metrics into a single Parquet file for analysis.
+"""
 import argparse
 import importlib
 import re
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 import lightning.pytorch as pl
 import pandas as pd
@@ -12,11 +22,25 @@ from tqdm import tqdm
 
 from src.PetriNets import load_spn_data_from_files
 from src.SPNDataModule import SPNDataModule
+from src.config_utils import load_config
 
 
-def load_model_dynamically(checkpoint_path: str) -> tuple[pl.LightningModule, dict]:
-    """
-    Dynamically loads a Lightning model and its checkpoint data.
+def load_model_dynamically(checkpoint_path: str) -> Tuple[pl.LightningModule, dict]:
+    """Dynamically loads a Lightning model and its checkpoint data.
+
+    This function reads the model's class path from the checkpoint's
+    hyperparameters, imports the module, and loads the model from the
+    checkpoint.
+
+    Args:
+        checkpoint_path: The path to the model checkpoint file.
+
+    Returns:
+        A tuple containing the loaded LightningModule and the checkpoint data.
+
+    Raises:
+        KeyError: If the model class path is not found in the checkpoint.
+        ImportError: If the model class cannot be imported.
     """
     project_root = Path(__file__).resolve().parent
     if str(project_root) not in sys.path:
@@ -41,8 +65,17 @@ def load_model_dynamically(checkpoint_path: str) -> tuple[pl.LightningModule, di
 
 
 def parse_metadata_from_path(ckpt_path: Path, experiment_dir: Path) -> Dict[str, Any]:
-    """
-    Infers metadata such as the experiment name, operator, and run ID from the path structure.
+    """Infers metadata from the checkpoint's file path.
+
+    This function extracts the experiment name, GNN operator, run ID, and seed
+    from the directory structure.
+
+    Args:
+        ckpt_path: The path to the model checkpoint file.
+        experiment_dir: The root directory of the experiment.
+
+    Returns:
+        A dictionary containing the inferred metadata.
     """
     metadata = {}
 
@@ -66,10 +99,18 @@ def parse_metadata_from_path(ckpt_path: Path, experiment_dir: Path) -> Dict[str,
 
 
 def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path, output_parquet_path: Path):
-    """
-    Finds all model checkpoints in an experiment directory, evaluates each against
-    all files in a data directory, and aggregates results into a single Parquet file.
-    It prefers 'best.ckpt' if available in a checkpoint directory, otherwise uses any other '.ckpt' file.
+    """Evaluates all model checkpoints in a directory against a set of datasets.
+
+    It scans the `experiment_dir` for all `.ckpt` files, preferring `best.ckpt`
+    if available for a given run. Each found checkpoint is then tested against
+    every `.processed` file in the `data_directory`. The results are compiled
+    into a pandas DataFrame and saved as a Parquet file.
+
+    Args:
+        experiment_dir: The directory containing the experiment's results and
+            checkpoints.
+        data_directory: The directory containing the `.processed` test datasets.
+        output_parquet_path: The path to save the aggregated results Parquet file.
     """
     print(f"--- Scanning for model checkpoints in: {experiment_dir} ---")
     all_ckpts = sorted(list(experiment_dir.glob("**/checkpoints/*.ckpt")))
@@ -169,8 +210,6 @@ def evaluate_experiment_on_directory(experiment_dir: Path, data_directory: Path,
     else:
         print("\n--- No successful evaluations were completed. No output file generated. ---")
 
-
-from src.config_utils import load_config
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")

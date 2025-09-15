@@ -31,7 +31,7 @@ To create a virtual environment and install all necessary packages, run the foll
 
 2.  **Install dependencies from `pyproject.toml`**:
     ```bash
-    uv pip sync pyproject.toml
+    uv sync
     ```
 This ensures you have a reproducible environment with the exact versions of the libraries used for development.
 

@@ -1,3 +1,10 @@
+"""
+This module defines the cross-validation logic for evaluating trained GNN models.
+
+The `CrossValidator` class provides a systematic way to test a model against a
+set of datasets that were not used during its training or initial testing phases.
+This helps in assessing the model's generalization capabilities.
+"""
 import argparse
 import warnings
 from pathlib import Path
@@ -11,12 +18,27 @@ from src.SPNDatasets import HomogeneousSPNDataset
 
 
 class CrossValidator:
+    """
+    Manages the cross-validation process for a trained model.
+    """
     def __init__(self, config):
+        """
+        Initializes the CrossValidator with the given configuration.
+
+        Args:
+            config: A configuration object containing paths and settings.
+        """
         self.config = config
 
     def _get_datasets_to_evaluate(self) -> List[Path]:
         """
-        Determines the list of raw dataset files to use for cross-validation.
+        Determines the list of raw dataset files for cross-validation.
+
+        It either uses a specific list from the config or scans the raw data
+        directory for all available datasets.
+
+        Returns:
+            A list of Path objects for each dataset to be evaluated.
         """
         # If a specific list of datasets is provided in the config, use that.
         if self.config.cross_validation.datasets:
@@ -35,7 +57,21 @@ class CrossValidator:
         self, model: pl.LightningModule, run_config: argparse.Namespace, run_id: int, seed: int
     ) -> List[Dict[str, Any]]:
         """
-        Evaluates a single trained model instance against a specified set of datasets.
+        Evaluates a single trained model against a set of datasets.
+
+        For each dataset, it sets up a new `SPNDataModule` and uses a PyTorch
+        Lightning `Trainer` to run the test loop. It collects the performance
+        metrics and returns them.
+
+        Args:
+            model: The trained PyTorch Lightning model instance.
+            run_config: The configuration namespace from the specific training run.
+            run_id: The identifier for the training run.
+            seed: The random seed used for the training run.
+
+        Returns:
+            A list of dictionaries, where each dictionary contains the test
+            metrics for one of the evaluated datasets.
         """
         results: List[Dict[str, Any]] = []
         model_hparams = model.hparams

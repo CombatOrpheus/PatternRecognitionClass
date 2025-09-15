@@ -1,3 +1,9 @@
+"""This script runs a hyperparameter optimization study for heterogeneous GNN models.
+
+Using Optuna, it searches for the best hyperparameters for models like RGAT and
+HEAT. The script is designed to run studies for one or all supported
+heterogeneous operators based on the configuration.
+"""
 import argparse
 import logging
 import shutil
@@ -32,7 +38,26 @@ def objective(
     val_dataset: HeterogeneousSPNDataset,
     label_scaler: StandardScaler,
 ) -> float:
-    """The Optuna objective function for heterogeneous models."""
+    """The Optuna objective function for heterogeneous models.
+
+    This function defines the search space for hyperparameters, instantiates the
+    appropriate heterogeneous model (RGAT or HEAT), and runs the training and
+    validation loop.
+
+    Args:
+        trial: An Optuna Trial object.
+        config: The configuration namespace.
+        train_dataset: The training dataset.
+        val_dataset: The validation dataset.
+        label_scaler: The pre-fitted scaler for labels.
+
+    Returns:
+        The validation loss, which Optuna aims to minimize.
+
+    Raises:
+        ValueError: If an unsupported GNN operator is specified.
+        optuna.exceptions.TrialPruned: If the trial is pruned.
+    """
     gnn_operator = config.gnn_operator
 
     hyperparams = {
@@ -115,7 +140,11 @@ def objective(
 
 
 def main():
-    """Main function to run the optimization study."""
+    """Main function to orchestrate the optimization study.
+
+    Loads the configuration, preprocesses the data, and then loops through the
+    specified heterogeneous GNN operators to run an Optuna study for each.
+    """
     config, config_path = load_config()
 
     config.io.studies_dir.mkdir(parents=True, exist_ok=True)

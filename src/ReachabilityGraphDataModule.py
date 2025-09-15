@@ -1,6 +1,8 @@
-"""
-**REFACTORED**: This module defines the ReachabilityGraphDataModule,
-which now uses the persistent InMemoryDataset classes for efficient data loading.
+"""This module defines the `ReachabilityGraphDataModule`, a PyTorch Lightning
+DataModule for handling SPN Reachability Graph datasets.
+
+It leverages the `ReachabilityGraphInMemoryDataset` for efficient data loading
+and preprocessing, including train/validation/test splitting and label scaling.
 """
 
 from typing import Optional
@@ -16,9 +18,11 @@ from src.SPNDatasets import ReachabilityGraphInMemoryDataset
 
 
 class ReachabilityGraphDataModule(pl.LightningDataModule):
-    """
-    A LightningDataModule that uses pre-processed, on-disk datasets for
-    SPN Reachability Graphs.
+    """A LightningDataModule for SPN Reachability Graph datasets.
+
+    This class handles the loading, splitting, and preprocessing of reachability
+    graph data. It uses an in-memory dataset for efficiency and applies label
+    scaling to normalize the target values.
     """
 
     def __init__(
@@ -32,13 +36,32 @@ class ReachabilityGraphDataModule(pl.LightningDataModule):
         num_workers: int = 0,
         val_split: float = 0.2,
     ):
+        """Initializes the ReachabilityGraphDataModule.
+
+        Args:
+            root: The root directory where the dataset should be stored.
+            train_file: The name of the training data file.
+            val_file: The name of the validation data file.
+            test_file: The name of the test data file.
+            label_to_predict: The specific analysis result to use as the label.
+            batch_size: The batch size for the dataloaders.
+            num_workers: The number of workers for the dataloaders.
+            val_split: The fraction of the training data to use for validation.
+        """
         super().__init__()
         self.save_hyperparameters()
         self.label_scaler = None
         self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
 
     def setup(self, stage: Optional[str] = None):
-        """Loads datasets and performs train/val/test splits."""
+        """Loads datasets, performs splits, and fits the label scaler.
+
+        This method is called by PyTorch Lightning. It sets up the training,
+        validation, and test datasets based on the provided stage.
+
+        Args:
+            stage: The stage for which to set up the data ('fit' or 'test').
+        """
         if stage == "fit" or stage is None:
             full_dataset = ReachabilityGraphInMemoryDataset(
                 self.hparams.root, self.hparams.train_file, self.hparams.label_to_predict
@@ -60,13 +83,22 @@ class ReachabilityGraphDataModule(pl.LightningDataModule):
                 self._scale_dataset(self.test_dataset)
 
     def _scale_dataset(self, dataset: Subset):
-        """Applies the fitted scaler to the labels of a dataset."""
+        """Applies the fitted scaler to the labels of a dataset subset.
+
+        Args:
+            dataset: The dataset subset whose labels need to be scaled.
+        """
         for i in range(len(dataset)):
             data = dataset[i]
             y = data.y.numpy().reshape(-1, 1)
             data.y = torch.from_numpy(self.label_scaler.transform(y)).float().flatten()
 
     def train_dataloader(self) -> DataLoader:
+        """Creates the DataLoader for the training set.
+
+        Returns:
+            The training DataLoader.
+        """
         return DataLoader(
             self.train_dataset,
             batch_size=self.hparams.batch_size,
@@ -76,7 +108,17 @@ class ReachabilityGraphDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self) -> DataLoader:
+        """Creates the DataLoader for the validation set.
+
+        Returns:
+            The validation DataLoader.
+        """
         return DataLoader(self.val_dataset, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
 
     def test_dataloader(self) -> DataLoader:
+        """Creates the DataLoader for the test set.
+
+        Returns:
+            The test DataLoader.
+        """
         return DataLoader(self.test_dataset, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)

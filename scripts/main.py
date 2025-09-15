@@ -1,3 +1,13 @@
+"""This script serves as the main entry point for running the complete MLOps pipeline.
+
+It orchestrates the entire workflow by sequentially executing the key phases
+of the experiment:
+1.  **Hyperparameter Optimization**: Finds the best model parameters.
+2.  **Model Training**: Trains the final models using the best parameters.
+3.  **Analysis**: Generates plots and statistical summaries from the results.
+
+The behavior of each phase is controlled by a central configuration file.
+"""
 import torch
 
 from src.config_utils import load_config
@@ -7,11 +17,10 @@ from scripts.optimize_hyperparameters import main as optimize_main
 
 
 def main():
-    """
-    Main function to orchestrate the entire experiment workflow, including:
-    1. Hyperparameter optimization.
-    2. Training of models and immediate cross-validation.
-    3. Analysis and plotting of the results.
+    """Orchestrates the entire experiment workflow.
+
+    This function loads the configuration and then runs the hyperparameter
+    optimization, model training, and results analysis phases in sequence.
     """
     torch.set_float32_matmul_precision("high")
     config, config_path = load_config()

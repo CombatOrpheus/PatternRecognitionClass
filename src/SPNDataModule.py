@@ -1,7 +1,9 @@
-"""
-**REFACTORED**: This module defines the SPNDataModule, which now accepts
-pre-loaded data lists, correctly handles validation set creation,
-and exposes dataset properties like the number of features.
+"""This module defines the `SPNDataModule`, a flexible PyTorch Lightning
+DataModule for handling SPN graph data.
+
+It is designed to work with pre-loaded lists of `Data` or `HeteroData` objects,
+correctly handles validation set creation (either from a split or a pre-defined
+list), and exposes important dataset properties like the number of features.
 """
 
 from typing import Optional, Union, Dict, List
@@ -17,9 +19,12 @@ from src.PetriNets import SPNAnalysisResultLabel
 
 
 class SPNDataModule(pl.LightningDataModule):
-    """
-    A LightningDataModule that processes lists of SPN graph data.
-    It handles splitting, scaling, and batching.
+    """A LightningDataModule that processes and serves SPN graph data.
+
+    This module is designed to be flexible, accepting pre-loaded lists of graph
+    data objects. It manages data splitting, label scaling, and provides
+    dataloaders for training, validation, and testing. It also dynamically
+    infers metadata about the dataset, such as feature dimensions.
     """
 
     def __init__(
@@ -34,6 +39,20 @@ class SPNDataModule(pl.LightningDataModule):
         num_workers: int = 0,
         val_split: float = 0.2,
     ):
+        """Initializes the SPNDataModule.
+
+        Args:
+            label_to_predict: The specific analysis result to use as the label.
+            train_data_list: A list of data objects for training.
+            val_data_list: An optional list of data objects for validation.
+            test_data_list: An optional list of data objects for testing.
+            heterogeneous: Whether the data is heterogeneous.
+            batch_size: The batch size for the dataloaders.
+            label_scaler: An optional pre-fitted StandardScaler for labels.
+            num_workers: The number of workers for the dataloaders.
+            val_split: The fraction of training data to use for validation if
+                `val_data_list` is not provided.
+        """
         super().__init__()
         self.save_hyperparameters("label_to_predict", "heterogeneous", "batch_size", "num_workers", "val_split")
         self.train_data_list = train_data_list
@@ -50,7 +69,15 @@ class SPNDataModule(pl.LightningDataModule):
         self._num_edge_types: int = 0
 
     def setup(self, stage: Optional[str] = None):
-        """Processes datasets and performs train/val/test splits."""
+        """Processes datasets, performs splits, and fits the label scaler.
+
+        This method sets up the training, validation, and test datasets. If a
+        label scaler is not provided, it fits one on the training data. It also
+        infers and stores metadata about the dataset's structure.
+
+        Args:
+            stage: The stage for which to set up the data ('fit' or 'test').
+        """
         if stage == "fit" or stage is None:
             if self.train_data_list:
                 full_train_dataset = self.train_data_list
@@ -101,7 +128,11 @@ class SPNDataModule(pl.LightningDataModule):
                 self._num_edge_types = 1
 
     def _scale_dataset(self, dataset: Union[Subset, List]):
-        """Applies the fitted scaler to the labels of a dataset."""
+        """Applies the fitted scaler to the labels of a dataset.
+
+        Args:
+            dataset: The dataset (or subset) whose labels need to be scaled.
+        """
         for i in range(len(dataset)):
             data = dataset[i]
             if self.hparams.heterogeneous:
@@ -113,21 +144,30 @@ class SPNDataModule(pl.LightningDataModule):
 
     @property
     def num_node_features(self) -> Union[int, Dict[str, int]]:
+        """The number of node features in the dataset."""
         return self._num_node_features
 
     @property
     def num_edge_features(self) -> Union[int, Dict[str, int]]:
+        """The number of edge features in the dataset."""
         return self._num_edge_features
 
     @property
     def num_node_types(self) -> int:
+        """The number of node types in the dataset."""
         return self._num_node_types
 
     @property
     def num_edge_types(self) -> int:
+        """The number of edge types in the dataset."""
         return self._num_edge_types
 
     def train_dataloader(self) -> DataLoader:
+        """Creates the DataLoader for the training set.
+
+        Returns:
+            The training DataLoader.
+        """
         return DataLoader(
             self.train_dataset,
             batch_size=self.hparams.batch_size,
@@ -137,7 +177,17 @@ class SPNDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self) -> DataLoader:
+        """Creates the DataLoader for the validation set.
+
+        Returns:
+            The validation DataLoader.
+        """
         return DataLoader(self.val_dataset, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
 
     def test_dataloader(self) -> DataLoader:
+        """Creates the DataLoader for the test set.
+
+        Returns:
+            The test DataLoader.
+        """
         return DataLoader(self.test_dataset, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)

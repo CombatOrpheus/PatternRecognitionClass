@@ -1,3 +1,16 @@
+"""
+This module provides a comprehensive analysis suite for evaluating the results
+of GNN model training and cross-validation.
+
+It includes capabilities for:
+- Calculating summary statistics (mean, std) for performance metrics.
+- Performing statistical tests (Friedman test) to compare model performances.
+- Generating visualizations such as critical difference diagrams, performance vs.
+  complexity plots, and cross-evaluation heatmaps.
+
+The analysis is driven by a configuration object and operates on data from
+Parquet files generated during the MLOps pipeline.
+"""
 import argparse
 from pathlib import Path
 
@@ -9,12 +22,32 @@ import seaborn as sns
 
 
 class Analysis:
+    """
+    A class to perform analysis of model performance and generate visualizations.
+    """
+
     def __init__(self, config):
+        """
+        Initializes the Analysis class with the given configuration.
+
+        Args:
+            config: A configuration object containing paths and analysis settings.
+        """
         self.config = config
         self.output_dir = self.config.io.output_dir
         self.analysis_config = self.config.analysis
 
     def run(self):
+        """
+        Executes the full analysis pipeline.
+
+        This method reads the statistical and cross-evaluation results, sets up
+        the output directories, and then calls the appropriate methods to
+        generate summaries and plots based on the configuration.
+
+        Raises:
+            FileNotFoundError: If the results files are not found.
+        """
         stats_results_file = self.config.io.stats_results_file
         cross_eval_results_file = self.config.io.cross_eval_results_file
 
@@ -54,7 +87,18 @@ class Analysis:
 
         print("\n--- Analysis complete. ---")
 
-    def _calculate_summary(self, stats_df, metric, output_dir):
+    def _calculate_summary(self, stats_df: pd.DataFrame, metric: str, output_dir: Path) -> pd.DataFrame:
+        """
+        Calculates and saves a summary of model performance metrics.
+
+        Args:
+            stats_df: DataFrame with statistical results from training runs.
+            metric: The performance metric to summarize.
+            output_dir: The directory to save the summary CSV file.
+
+        Returns:
+            A DataFrame containing the summary statistics.
+        """
         summary_df = (
             stats_df.groupby("gnn_operator")
             .agg(
@@ -70,7 +114,15 @@ class Analysis:
         summary_df.to_csv(output_dir / "main_performance_summary.csv", index=False, float_format="%.4f")
         return summary_df
 
-    def _plot_critical_difference(self, stats_df, metric, output_dir):
+    def _plot_critical_difference(self, stats_df: pd.DataFrame, metric: str, output_dir: Path):
+        """
+        Performs a Friedman test and plots a critical difference diagram.
+
+        Args:
+            stats_df: DataFrame with statistical results.
+            metric: The metric to compare models on.
+            output_dir: The directory to save the plot.
+        """
         model_groups = [group[metric].values for _, group in stats_df.groupby("gnn_operator")]
         if len(model_groups) <= 1:
             print("Skipping Friedman test and critical difference diagram: only one model group.")
@@ -94,7 +146,16 @@ class Analysis:
         else:
             print("No significant difference found; skipping post-hoc test and diagram.")
 
-    def _plot_performance_complexity(self, stats_df, summary_df, metric, output_dir):
+    def _plot_performance_complexity(self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str, output_dir: Path):
+        """
+        Generates plots comparing model performance against complexity.
+
+        Args:
+            stats_df: DataFrame with detailed statistical results.
+            summary_df: DataFrame with summarized performance metrics.
+            metric: The performance metric to plot.
+            output_dir: The directory to save the plot.
+        """
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
         sns.boxplot(ax=axes[0], data=stats_df, x="gnn_operator", y=metric, palette="viridis")
         axes[0].set_title("Model Performance Distribution", fontsize=14, weight="bold")
@@ -121,7 +182,15 @@ class Analysis:
         plt.close()
         print("Performance vs. complexity plots saved.")
 
-    def _plot_cross_eval_heatmap(self, cross_df, metric, output_dir):
+    def _plot_cross_eval_heatmap(self, cross_df: pd.DataFrame, metric: str, output_dir: Path):
+        """
+        Plots a heatmap of cross-dataset generalization performance.
+
+        Args:
+            cross_df: DataFrame with cross-evaluation results.
+            metric: The performance metric to visualize.
+            output_dir: The directory to save the heatmap.
+        """
         if "cross_eval_dataset" not in cross_df.columns:
             print("Skipping cross-evaluation heatmap: 'cross_eval_dataset' column not found.")
             return

@@ -127,7 +127,7 @@ def objective(
             PyTorchLightningPruningCallback(trial, monitor="val/loss"),
         ],
         enable_model_summary=False,
-        enable_progress_bar=True,
+        enable_progress_bar=False,
         log_every_n_steps=1,
     )
 

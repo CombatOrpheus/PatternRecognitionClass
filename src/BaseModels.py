@@ -14,11 +14,10 @@ from torchmetrics.regression import (
     MeanSquaredError,
     R2Score,
     MeanAbsolutePercentageError,
-    MedianAbsoluteError,
     ExplainedVariance,
     SymmetricMeanAbsolutePercentageError,
-    MaxError,
 )
+from src.CustomMetrics import MaxError, MedianAbsoluteError
 
 class BaseGNNModule(pl.LightningModule):
     """

@@ -11,7 +11,7 @@ It includes capabilities for:
 The analysis is driven by a configuration object and operates on data from
 Parquet files generated during the MLOps pipeline.
 """
-import argparse
+
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -69,7 +69,7 @@ class Analysis:
         print("\n--- Running Main Analysis ---")
         for metric in self.analysis_config.main_metrics:
             print(f"\n--- Analyzing Metric: {metric} ---")
-            metric_output_dir = self.output_dir / "main" / metric.replace('/', '_')
+            metric_output_dir = self.output_dir / "main" / metric.replace("/", "_")
             metric_output_dir.mkdir(parents=True, exist_ok=True)
 
             summary_df = self._calculate_summary(stats_df, metric, metric_output_dir)
@@ -83,7 +83,7 @@ class Analysis:
             print("\n--- Running Cross-Validation Analysis ---")
             for metric in self.analysis_config.cross_val_metrics:
                 print(f"\n--- Analyzing Metric for Heatmap: {metric} ---")
-                metric_output_dir = self.output_dir / "cross_val" / metric.replace('/', '_')
+                metric_output_dir = self.output_dir / "cross_val" / metric.replace("/", "_")
                 metric_output_dir.mkdir(parents=True, exist_ok=True)
                 self._plot_cross_eval_heatmap(cross_df, metric, metric_output_dir)
 
@@ -126,8 +126,8 @@ class Analysis:
             output_dir: The directory to save the plot.
         """
         model_groups = [group[metric].values for _, group in stats_df.groupby("gnn_operator")]
-        if len(model_groups) <= 1:
-            print("Skipping Friedman test and critical difference diagram: only one model group.")
+        if len(model_groups) <= 2:
+            print("Skipping Friedman test and critical difference diagram: not enough groups.")
             return
 
         friedman_stat, p_value = ss.friedmanchisquare(*model_groups)
@@ -135,7 +135,7 @@ class Analysis:
 
         if p_value < 0.05:
             posthoc_results = sp.posthoc_conover_friedman(
-                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator"
+                stats_df, melted=True, y_col=metric, block_col="run_id", block_id_col="run_id", group_col="gnn_operator"
             )
             avg_rank = stats_df.groupby("run_id")[metric].rank().groupby(stats_df["gnn_operator"]).mean()
 
@@ -148,7 +148,9 @@ class Analysis:
         else:
             print("No significant difference found; skipping post-hoc test and diagram.")
 
-    def _plot_performance_complexity(self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str, output_dir: Path):
+    def _plot_performance_complexity(
+        self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str, output_dir: Path
+    ):
         """
         Generates plots comparing model performance against complexity.
 

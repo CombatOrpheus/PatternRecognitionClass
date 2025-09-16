@@ -8,13 +8,16 @@ of the experiment:
 
 The behavior of each phase is controlled by a central configuration file.
 """
-import argparse
-import torch
 
-from src.config_utils import load_config
-from src.Analysis import Analysis
-from scripts.train_model import main as train_main
+import argparse
+
+import torch
+import torch_geometric
+
 from scripts.optimize_hyperparameters import main as optimize_main
+from scripts.train_model import main as train_main
+from src.Analysis import Analysis
+from src.config_utils import load_config
 
 
 def main():
@@ -37,7 +40,11 @@ def main():
     args, unknown = parser.parse_known_args()
 
     torch.set_float32_matmul_precision("high")
-    # Pass remaining args to load_config
+
+    torch.serialization.add_safe_globals([torch_geometric.data.data.DataEdgeAttr])
+    torch.serialization.add_safe_globals([torch_geometric.data.data.DataTensorAttr])
+    torch.serialization.add_safe_globals([torch_geometric.data.storage.GlobalStorage])
+
     config, config_path = load_config(unknown)
 
     print("--- Starting Experiment Workflow ---")

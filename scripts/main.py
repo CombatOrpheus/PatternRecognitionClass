@@ -51,7 +51,7 @@ def main():
 
     if args.only_analysis:
         print("\n--- Running only the Analysis Phase ---")
-        analysis = Analysis(config)
+        analysis = Analysis(config, config_path)
         analysis.run()
         print("\n--- Analysis Phase Completed ---")
         return
@@ -69,7 +69,7 @@ def main():
 
     # 3. Analysis Phase
     print("\n--- Phase 3: Analysis and Plotting ---")
-    analysis = Analysis(config)
+    analysis = Analysis(config, config_path)
     analysis.run()
 
     print("\n--- Experiment Workflow Completed ---")

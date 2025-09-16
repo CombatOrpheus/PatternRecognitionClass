@@ -112,10 +112,10 @@ This section contains parameters that control which plots and statistical tests 
 
 - `main_metrics`: A list of metrics for which to generate the main analysis plots (performance summary, critical difference, etc.).
   - Default: `["test/rmse", "test/mae", "val/rmse"]`
-  - Choices: `["test/mae", "test/mse", "test/rmse", "test/r2", "test/mape", "val/mae", "val/mse", "val/rmse", "val/r2", "val/mape"]`
+  - Choices: `["test/mae", "test/mse", "test/rmse", "test/r2", "test/mape", "test/medae", "test/smape", "test/explainedvariance", "test/maxerror", "val/mae", "val/mse", "val/rmse", "val/r2", "val/mape", "val/medae"]`
 - `cross_val_metrics`: A list of metrics for which to generate the cross-validation heatmap. **Note:** This should only include `test/*` metrics, as validation metrics are not available in the cross-evaluation context.
   - Default: `["test/rmse", "test/mae"]`
-  - Choices: `["test/mae", "test/mse", "test/rmse", "test/r2", "test/mape"]`
+  - Choices: `["test/mae", "test/mse", "test/rmse", "test/r2", "test/mape", "test/medae", "test/smape", "test/explainedvariance", "test/maxerror"]`
 - `generate_critical_diagram`: If `true`, a critical difference diagram is generated for each metric in `main_metrics`.
   - Default: `true`
 - `generate_performance_complexity_plot`: If `true`, a plot of model performance versus complexity is generated for each metric in `main_metrics`.

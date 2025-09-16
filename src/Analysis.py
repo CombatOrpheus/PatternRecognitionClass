@@ -13,6 +13,7 @@ Parquet files generated during the MLOps pipeline.
 """
 
 from pathlib import Path
+import shutil
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -21,6 +22,7 @@ import scipy.stats as ss
 import seaborn as sns
 
 from src.config_utils import load_config
+from src.name_utils import generate_experiment_name, generate_plot_name
 
 
 class Analysis:
@@ -28,7 +30,7 @@ class Analysis:
     A class to perform analysis of model performance and generate visualizations.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, config_path: Path):
         """
         Initializes the Analysis class with the given configuration.
 
@@ -36,8 +38,16 @@ class Analysis:
             config: A configuration object containing paths and analysis settings.
         """
         self.config = config
-        self.output_dir = self.config.io.output_dir
+        self.config_path = config_path
         self.analysis_config = self.config.analysis
+        self.output_dir = (
+            self.config.io.output_dir
+            / generate_experiment_name(
+                self.config.data.train_file,
+                self.config.data.test_file,
+                self.config.data.label,
+            )
+        )
 
     def run(self):
         """
@@ -59,6 +69,7 @@ class Analysis:
             raise FileNotFoundError(f"Cross-evaluation results file not found at: {cross_eval_results_file}")
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self.config_path, self.output_dir / "config.toml")
         print(f"--- Analysis outputs will be saved to: {self.output_dir} ---")
 
         stats_df = pd.read_parquet(stats_results_file)
@@ -69,27 +80,23 @@ class Analysis:
         print("\n--- Running Main Analysis ---")
         for metric in self.analysis_config.main_metrics:
             print(f"\n--- Analyzing Metric: {metric} ---")
-            metric_output_dir = self.output_dir / "main" / metric.replace("/", "_")
-            metric_output_dir.mkdir(parents=True, exist_ok=True)
 
-            summary_df = self._calculate_summary(stats_df, metric, metric_output_dir)
+            summary_df = self._calculate_summary(stats_df, metric)
             if self.analysis_config.generate_critical_diagram:
-                self._plot_critical_difference(stats_df, metric, metric_output_dir)
+                self._plot_critical_difference(stats_df, metric)
             if self.analysis_config.generate_performance_complexity_plot:
-                self._plot_performance_complexity(stats_df, summary_df, metric, metric_output_dir)
+                self._plot_performance_complexity(stats_df, summary_df, metric)
 
         # --- Cross-Validation Analysis ---
         if self.analysis_config.generate_cross_eval_heatmap:
             print("\n--- Running Cross-Validation Analysis ---")
             for metric in self.analysis_config.cross_val_metrics:
                 print(f"\n--- Analyzing Metric for Heatmap: {metric} ---")
-                metric_output_dir = self.output_dir / "cross_val" / metric.replace("/", "_")
-                metric_output_dir.mkdir(parents=True, exist_ok=True)
-                self._plot_cross_eval_heatmap(cross_df, metric, metric_output_dir)
+                self._plot_cross_eval_heatmap(cross_df, metric)
 
         print("\n--- Analysis complete. ---")
 
-    def _calculate_summary(self, stats_df: pd.DataFrame, metric: str, output_dir: Path) -> pd.DataFrame:
+    def _calculate_summary(self, stats_df: pd.DataFrame, metric: str) -> pd.DataFrame:
         """
         Calculates and saves a summary of model performance metrics.
 
@@ -113,17 +120,17 @@ class Analysis:
         )
         print("Model Performance Summary:")
         print(summary_df)
-        summary_df.to_csv(output_dir / "main_performance_summary.csv", index=False, float_format="%.4f")
+        summary_filename = self.output_dir / f"performance_summary_{metric.replace('/', '_')}.csv"
+        summary_df.to_csv(summary_filename, index=False, float_format="%.4f")
         return summary_df
 
-    def _plot_critical_difference(self, stats_df: pd.DataFrame, metric: str, output_dir: Path):
+    def _plot_critical_difference(self, stats_df: pd.DataFrame, metric: str):
         """
         Performs a Friedman test and plots a critical difference diagram.
 
         Args:
             stats_df: DataFrame with statistical results.
             metric: The metric to compare models on.
-            output_dir: The directory to save the plot.
         """
         model_groups = [group[metric].values for _, group in stats_df.groupby("gnn_operator")]
         if len(model_groups) <= 2:
@@ -135,21 +142,22 @@ class Analysis:
 
         if p_value < 0.05:
             posthoc_results = sp.posthoc_conover_friedman(
-                stats_df, melted=True, y_col=metric, block_col="run_id", block_id_col="run_id", group_col="gnn_operator"
+                stats_df, melted=True, y_col=metric, block_col="run_id", group_col="gnn_operator"
             )
             avg_rank = stats_df.groupby("run_id")[metric].rank().groupby(stats_df["gnn_operator"]).mean()
 
             fig, ax = plt.subplots(figsize=(10, max(4, len(avg_rank) * 0.5)))
             sp.critical_difference_diagram(ranks=avg_rank, sig_matrix=posthoc_results, ax=ax)
             ax.set_title(f"Critical Difference Diagram for {metric.replace('/', ' ').title()}")
-            plt.savefig(output_dir / "critical_difference_diagram.svg", bbox_inches="tight")
+            plot_name = generate_plot_name("critical_difference_diagram", metric)
+            plt.savefig(self.output_dir / plot_name, bbox_inches="tight")
             plt.close()
-            print("Critical difference diagram saved.")
+            print(f"{plot_name} saved.")
         else:
             print("No significant difference found; skipping post-hoc test and diagram.")
 
     def _plot_performance_complexity(
-        self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str, output_dir: Path
+        self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str
     ):
         """
         Generates plots comparing model performance against complexity.
@@ -158,7 +166,6 @@ class Analysis:
             stats_df: DataFrame with detailed statistical results.
             summary_df: DataFrame with summarized performance metrics.
             metric: The performance metric to plot.
-            output_dir: The directory to save the plot.
         """
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
         sns.boxplot(ax=axes[0], data=stats_df, x="gnn_operator", y=metric, palette="viridis")
@@ -182,18 +189,18 @@ class Analysis:
         axes[1].set_xlabel("Trainable Parameters")
         axes[1].set_ylabel(f"Mean {metric.replace('/', ' ').title()}")
         plt.tight_layout()
-        plt.savefig(output_dir / "performance_vs_complexity.svg")
+        plot_name = generate_plot_name("performance_vs_complexity", metric)
+        plt.savefig(self.output_dir / plot_name)
         plt.close()
-        print("Performance vs. complexity plots saved.")
+        print(f"{plot_name} saved.")
 
-    def _plot_cross_eval_heatmap(self, cross_df: pd.DataFrame, metric: str, output_dir: Path):
+    def _plot_cross_eval_heatmap(self, cross_df: pd.DataFrame, metric: str):
         """
         Plots a heatmap of cross-dataset generalization performance.
 
         Args:
             cross_df: DataFrame with cross-evaluation results.
             metric: The performance metric to visualize.
-            output_dir: The directory to save the heatmap.
         """
         if "cross_eval_dataset" not in cross_df.columns:
             print("Skipping cross-evaluation heatmap: 'cross_eval_dataset' column not found.")
@@ -209,15 +216,16 @@ class Analysis:
         plt.ylabel("GNN Operator")
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
-        plt.savefig(output_dir / "cross_eval_heatmap.svg")
+        plot_name = generate_plot_name("cross_eval_heatmap", metric)
+        plt.savefig(self.output_dir / plot_name)
         plt.close()
-        print("Cross-evaluation heatmap saved.")
+        print(f"{plot_name} saved.")
 
 
 def main():
     """Main function to run the analysis as a standalone script."""
-    config, _ = load_config()
-    analysis = Analysis(config)
+    config, config_path = load_config()
+    analysis = Analysis(config, config_path)
     analysis.run()
 
 

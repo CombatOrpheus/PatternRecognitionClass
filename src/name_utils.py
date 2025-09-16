@@ -45,3 +45,21 @@ def generate_experiment_name(train_file: Path, test_file: Path, label: str) -> s
     train_base = get_dataset_base_name(train_file)
     test_base = get_dataset_base_name(test_file)
     return f"{train_base}-{test_base}-{label}"
+
+
+def generate_plot_name(plot_type: str, metric: str, file_format: str = "svg") -> str:
+    """Generates a descriptive and unique filename for a plot.
+
+    The name includes the type of plot and the metric being visualized,
+    ensuring clarity and avoiding naming conflicts.
+
+    Args:
+        plot_type: The type of plot (e.g., 'critical_difference', 'performance_vs_complexity').
+        metric: The metric being plotted (e.g., 'accuracy', 'roc_auc').
+        file_format: The file format for the plot (e.g., 'svg', 'png').
+
+    Returns:
+        A string to be used as the plot's filename.
+    """
+    metric_suffix = metric.replace('/', '_')
+    return f"{plot_type}_{metric_suffix}.{file_format}"

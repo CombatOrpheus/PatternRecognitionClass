@@ -47,8 +47,8 @@ study_name = "hetero_gnn_spn_optimization"
 datasets = []
 
 [analysis]
-main_metrics = ["test/rmse", "test/mae", "val/rmse"]
-cross_val_metrics = ["test/rmse", "test/mae"]
+main_metrics = ["test/mae", "test/rmse", "test/r2", "test/mape", "val/mae", "val/rmse", "val/r2", "val/medae", "test/medae", "test/explainedvariance", "test/smape", "test/maxerror"]
+cross_val_metrics = ["test/mae", "test/rmse", "test/r2", "test/mape", "test/medae", "test/explainedvariance", "test/smape", "test/maxerror"]
 generate_critical_diagram = true
 generate_performance_complexity_plot = true
 generate_cross_eval_heatmap = true

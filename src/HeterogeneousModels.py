@@ -11,19 +11,18 @@ handles the training, validation, and optimization logic with comprehensive metr
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
 from torch.nn import ModuleDict, ModuleList
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import HeteroConv, RGATConv, HEATConv, Linear
-from torchmetrics import MetricCollection
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score, MeanAbsolutePercentageError
+
+from src.BaseModels import BaseGNNModule
 
 
-class LightningSPNModule(pl.LightningModule):
+class LightningSPNModule(BaseGNNModule):
     """A base PyTorch Lightning module for SPN models.
 
     Encapsulates shared logic for training, validation, testing, optimizer
@@ -31,46 +30,32 @@ class LightningSPNModule(pl.LightningModule):
     It tracks metrics both per node type and in aggregate.
     """
 
-    def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5):
+    def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5, metrics: Dict[str, List[str]] = None):
         """Initializes the LightningSPNModule.
 
         Args:
             learning_rate: The learning rate for the optimizer.
             weight_decay: The weight decay for the optimizer.
+            metrics: A dictionary specifying which metrics to use for each split.
         """
-        super().__init__()
-        self.learning_rate = learning_rate
-        self.weight_decay = weight_decay
-
+        super().__init__(learning_rate, weight_decay, metrics)
         self.node_types = ["place", "transition"]
-        for split in ["train", "val", "test"]:
-            # Per-node-type metrics for detailed analysis
+        self._initialize_per_node_type_metrics()
+
+
+    def _initialize_per_node_type_metrics(self):
+        """Initializes metrics for each node type."""
+        for split in self.metrics_config.keys():
             metrics_per_node = ModuleDict(
                 {
                     nt: MetricCollection(
-                        {
-                            "mae": MeanAbsoluteError(),
-                            "mse": MeanSquaredError(),
-                            "rmse": MeanSquaredError(squared=False),
-                            "r2": R2Score(),
-                        }
+                        {name: self._get_metric_class(name)() for name in self.metrics_config[split]}
                     )
                     for nt in self.node_types
                 }
             )
-            setattr(self, f"{split}_metrics", metrics_per_node)
+            setattr(self, f"{split}_metrics_per_node", metrics_per_node)
 
-            # Aggregate metrics for overall performance and compatibility with analysis scripts
-            agg_metrics = MetricCollection(
-                {
-                    "mae": MeanAbsoluteError(),
-                    "mse": MeanSquaredError(),
-                    "rmse": MeanSquaredError(squared=False),
-                    "r2": R2Score(),
-                    "mape": MeanAbsolutePercentageError(),
-                }
-            )
-            setattr(self, f"{split}_agg_metrics", agg_metrics)
 
     def _common_step(self, batch: HeteroData, prefix: str) -> torch.Tensor:
         """Performs a common step for training, validation, and testing.
@@ -87,8 +72,8 @@ class LightningSPNModule(pl.LightningModule):
         """
         output_dict = self(batch)
         total_loss = 0.0
-        metrics_dict = getattr(self, f"{prefix}_metrics")
-        agg_metrics_dict = getattr(self, f"{prefix}_agg_metrics")
+        metrics_per_node = getattr(self, f"{prefix}_metrics_per_node")
+        agg_metrics = getattr(self, f"{prefix}_metrics")
 
         all_preds, all_trues = [], []
 
@@ -101,7 +86,7 @@ class LightningSPNModule(pl.LightningModule):
             total_loss += loss
 
             # Log per-node-type metrics
-            metrics = metrics_dict[node_type]
+            metrics = metrics_per_node[node_type]
             metrics.update(y_pred.squeeze(), y_true)
             self.log_dict({f"{prefix}/{node_type}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
 
@@ -109,65 +94,17 @@ class LightningSPNModule(pl.LightningModule):
             all_preds.append(y_pred.squeeze())
             all_trues.append(y_true)
 
-        # **MODIFIED**: Compute and log aggregate metrics if applicable
         if all_preds:
             agg_preds = torch.cat(all_preds)
             agg_trues = torch.cat(all_trues)
-            agg_metrics_dict.update(agg_preds, agg_trues)
-            self.log_dict({f"{prefix}/{k}": v for k, v in agg_metrics_dict.items()}, on_step=False, on_epoch=True)
+            agg_metrics.update(agg_preds, agg_trues)
+            self.log_dict({f"{prefix}/{k}": v for k, v in agg_metrics.items()}, on_step=False, on_epoch=True)
 
         if total_loss == 0.0:
             return torch.tensor(0.0, device=self.device, requires_grad=True)
 
         self.log(f"{prefix}/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True)
         return total_loss
-
-    def training_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        """The training step for the model.
-
-        Args:
-            batch: The training data batch.
-            batch_idx: The index of the batch.
-
-        Returns:
-            The loss for the training batch.
-        """
-        return self._common_step(batch, "train")
-
-    def validation_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        """The validation step for the model.
-
-        Args:
-            batch: The validation data batch.
-            batch_idx: The index of the batch.
-
-        Returns:
-            The loss for the validation batch.
-        """
-        return self._common_step(batch, "val")
-
-    def test_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        """The test step for the model.
-
-        Args:
-            batch: The test data batch.
-            batch_idx: The index of the batch.
-
-        Returns:
-            The loss for the test batch.
-        """
-        loss = self._common_step(batch, "test")
-        return loss
-
-    def configure_optimizers(self) -> Dict[str, Any]:
-        """Configures the optimizer for the model.
-
-        Returns:
-            A dictionary containing the optimizer.
-        """
-        return {
-            "optimizer": torch.optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        }
 
     def forward(self, batch: HeteroData) -> Dict[str, torch.Tensor]:
         """The forward pass of the model.
@@ -197,7 +134,7 @@ class BaseHeteroGNN(LightningSPNModule, ABC):
             **kwargs: Keyword arguments for the model, including learning_rate
                 and weight_decay.
         """
-        super().__init__(kwargs.get("learning_rate", 1e-3), kwargs.get("weight_decay", 1e-5))
+        super().__init__(kwargs.get("learning_rate", 1e-3), kwargs.get("weight_decay", 1e-5), kwargs.get("metrics"))
         self.save_hyperparameters()
         self.convs = ModuleList()
         self.lin = ModuleDict()

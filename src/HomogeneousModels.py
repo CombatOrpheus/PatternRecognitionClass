@@ -6,9 +6,8 @@ the official torch_geometric.nn.models.MLP for the readout head. It defines
 several GNN architectures for both graph-level and node-level prediction tasks.
 """
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, List
 
-import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ReLU
@@ -24,16 +23,11 @@ from torch_geometric.nn import (
     global_add_pool,
 )
 from torch_geometric.nn.models import MLP
-from torchmetrics import MetricCollection
-from torchmetrics.regression import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    R2Score,
-    MeanAbsolutePercentageError,
-)
+
+from src.BaseModels import BaseGNNModule
 
 
-class BaseGNN_SPN_Model(pl.LightningModule):
+class BaseGNN_SPN_Model(BaseGNNModule):
     """A base class for GNN models that handles common functionality.
 
     This includes metric instantiation, optimizer configuration, and the basic
@@ -41,94 +35,16 @@ class BaseGNN_SPN_Model(pl.LightningModule):
     implement the `_common_step` method.
     """
 
-    def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5):
+    def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5, metrics: Dict[str, List[str]] = None):
         """Initializes the BaseGNN_SPN_Model.
 
         Args:
             learning_rate: The learning rate for the optimizer.
             weight_decay: The weight decay for the optimizer.
+            metrics: A dictionary specifying which metrics to use for each split.
         """
-        super().__init__()
-        self.save_hyperparameters("learning_rate", "weight_decay")
-        self._initialize_metrics()
+        super().__init__(learning_rate, weight_decay, metrics)
 
-    def _initialize_metrics(self):
-        """Instantiates regression metrics using MetricCollection for each data split."""
-        for split in ["train", "val", "test"]:
-            collection = MetricCollection(
-                {
-                    "mae": MeanAbsoluteError(),
-                    "mse": MeanSquaredError(),
-                    "rmse": MeanSquaredError(squared=False),
-                    "r2": R2Score(),
-                    "mape": MeanAbsolutePercentageError(),
-                }
-            )
-            setattr(self, f"{split}_metrics", collection)
-
-    def training_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
-        """The training step for the model.
-
-        Args:
-            batch: The training data batch.
-            batch_idx: The index of the batch.
-
-        Returns:
-            The loss for the training batch.
-        """
-        return self._common_step(batch, "train")
-
-    def validation_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
-        """The validation step for the model.
-
-        Args:
-            batch: The validation data batch.
-            batch_idx: The index of the batch.
-
-        Returns:
-            The loss for the validation batch.
-        """
-        return self._common_step(batch, "val")
-
-    def test_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
-        """The test step for the model.
-
-        Args:
-            batch: The test data batch.
-            batch_idx: The index of the batch.
-
-        Returns:
-            The loss for the test batch.
-        """
-        loss = self._common_step(batch, "test")
-        return loss
-
-    def configure_optimizers(self) -> Dict[str, Any]:
-        """Configures the AdamW optimizer for the model.
-
-        Returns:
-            A dictionary containing the optimizer.
-        """
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
-        return {"optimizer": optimizer}
-
-    def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
-        """A common step for training, validation, and testing.
-
-        This method must be implemented by subclasses.
-
-        Args:
-            batch: The data batch.
-            prefix: The prefix for logging (e.g., "train", "val", "test").
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
-        """
-        raise NotImplementedError("Subclasses must implement the `_common_step` method.")
 
     def _get_gnn_layer(self, name: str, in_dim: int, out_dim: int) -> torch.nn.Module:
         """Factory function to create a GNN layer based on its name.
@@ -178,6 +94,7 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         weight_decay: float = 1e-5,
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
+        metrics: Dict[str, List[str]] = None,
     ):
         """Initializes the GraphGNN_SPN_Model.
 
@@ -192,8 +109,9 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
             weight_decay: The weight decay for the optimizer.
             gnn_k_hops: The number of hops for GNNs like TAGConv.
             gnn_alpha: The alpha parameter for SSGConv.
+            metrics: A dictionary specifying which metrics to use for each split.
         """
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(learning_rate, weight_decay, metrics)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -275,6 +193,7 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         weight_decay: float = 1e-5,
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
+        metrics: Dict[str, List[str]] = None,
     ):
         """Initializes the NodeGNN_SPN_Model.
 
@@ -289,8 +208,9 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
             weight_decay: The weight decay for the optimizer.
             gnn_k_hops: The number of hops for GNNs like TAGConv.
             gnn_alpha: The alpha parameter for SSGConv.
+            metrics: A dictionary specifying which metrics to use for each split.
         """
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(learning_rate, weight_decay, metrics)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -384,6 +304,7 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         heads: int = 4,  # Heads for the GAT layer
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-5,
+        metrics: Dict[str, List[str]] = None,
     ):
         """Initializes the MixedGNN_SPN_Model.
 
@@ -395,8 +316,9 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
             heads: The number of attention heads for the GAT layer.
             learning_rate: The learning rate for the optimizer.
             weight_decay: The weight decay for the optimizer.
+            metrics: A dictionary specifying which metrics to use for each split.
         """
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(learning_rate, weight_decay, metrics)
         self.save_hyperparameters()
 
         # Layer 1: GATConv

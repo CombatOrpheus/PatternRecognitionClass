@@ -12,8 +12,8 @@ The analysis is driven by a configuration object and operates on data from
 Parquet files generated during the MLOps pipeline.
 """
 
-import shutil
 from pathlib import Path
+import shutil
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -40,10 +40,13 @@ class Analysis:
         self.config = config
         self.config_path = config_path
         self.analysis_config = self.config.analysis
-        self.output_dir = self.config.io.output_dir / generate_experiment_name(
-            self.config.io.train_file,
-            self.config.io.test_file,
-            self.config.model.label,
+        self.output_dir = (
+            self.config.io.output_dir
+            / generate_experiment_name(
+                self.config.data.train_file,
+                self.config.data.test_file,
+                self.config.data.label,
+            )
         )
 
     def run(self):
@@ -153,7 +156,9 @@ class Analysis:
         else:
             print("No significant difference found; skipping post-hoc test and diagram.")
 
-    def _plot_performance_complexity(self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str):
+    def _plot_performance_complexity(
+        self, stats_df: pd.DataFrame, summary_df: pd.DataFrame, metric: str
+    ):
         """
         Generates plots comparing model performance against complexity.
 

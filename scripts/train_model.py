@@ -140,7 +140,9 @@ def run_single_training_run(
     Path(best_ckpt_path).rename(final_ckpt_path)
 
     # The `model` object has been updated in-place by the trainer and has the best weights.
-    results = trainer.test(model=model, datamodule=data_module, verbose=False)[0]
+    val_results = trainer.validate(model=model, datamodule=data_module, verbose=False)[0]
+    test_results = trainer.test(model=model, datamodule=data_module, verbose=False)[0]
+    results = {**val_results, **test_results}
     results.update(
         {
             "run_id": run_id,

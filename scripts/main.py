@@ -8,6 +8,7 @@ of the experiment:
 
 The behavior of each phase is controlled by a central configuration file.
 """
+import argparse
 import torch
 
 from src.config_utils import load_config
@@ -22,14 +23,38 @@ def main():
     This function loads the configuration and then runs the hyperparameter
     optimization, model training, and results analysis phases in sequence.
     """
+    parser = argparse.ArgumentParser(description="Main script for the MLOps pipeline.")
+    parser.add_argument(
+        "--skip-optimization",
+        action="store_true",
+        help="If set, skips the hyperparameter optimization phase.",
+    )
+    parser.add_argument(
+        "--only-analysis",
+        action="store_true",
+        help="If set, runs only the analysis phase.",
+    )
+    args, unknown = parser.parse_known_args()
+
     torch.set_float32_matmul_precision("high")
-    config, config_path = load_config()
+    # Pass remaining args to load_config
+    config, config_path = load_config(unknown)
 
     print("--- Starting Experiment Workflow ---")
 
-    # 1. Hyperparameter Optimization Phase
-    print("\n--- Phase 1: Hyperparameter Optimization ---")
-    optimize_main(config, config_path)
+    if args.only_analysis:
+        print("\n--- Running only the Analysis Phase ---")
+        analysis = Analysis(config)
+        analysis.run()
+        print("\n--- Analysis Phase Completed ---")
+        return
+
+    if not args.skip_optimization:
+        # 1. Hyperparameter Optimization Phase
+        print("\n--- Phase 1: Hyperparameter Optimization ---")
+        optimize_main(config, config_path)
+    else:
+        print("\n--- Skipping Phase 1: Hyperparameter Optimization ---")
 
     # 2. Training and Cross-Validation Phase
     print("\n--- Phase 2: Model Training and Cross-Validation ---")

@@ -20,6 +20,8 @@ import scikit_posthocs as sp
 import scipy.stats as ss
 import seaborn as sns
 
+from src.config_utils import load_config
+
 
 class Analysis:
     """
@@ -208,3 +210,14 @@ class Analysis:
         plt.savefig(output_dir / "cross_eval_heatmap.svg")
         plt.close()
         print("Cross-evaluation heatmap saved.")
+
+
+def main():
+    """Main function to run the analysis as a standalone script."""
+    config, _ = load_config()
+    analysis = Analysis(config)
+    analysis.run()
+
+
+if __name__ == "__main__":
+    main()

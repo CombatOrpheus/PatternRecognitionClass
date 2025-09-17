@@ -132,9 +132,11 @@ class HeterogeneousSPNDataset(BaseSPNDataset):
             label = spn_data.get_analysis_result(self.label_to_predict)
             if self.label_to_predict == "average_tokens_per_place":
                 data["place"].y = torch.tensor(label).float()
+                if hasattr(data, "y"):
+                    del data.y
             else:
                 # For graph-level labels
-                data.y = torch.tensor([label]).float()
+                data.y = torch.tensor([label] if not isinstance(label, np.ndarray) else label).float()
             data_list.append(data)
         if self.pre_transform is not None:
             data_list = [self.pre_transform(data) for data in data_list]

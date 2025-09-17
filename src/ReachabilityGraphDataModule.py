@@ -5,6 +5,7 @@ It leverages the `ReachabilityGraphInMemoryDataset` for efficient data loading
 and preprocessing, including train/validation/test splitting and label scaling.
 """
 
+from pathlib import Path
 from typing import Optional
 
 import lightning.pytorch as pl
@@ -63,8 +64,12 @@ class ReachabilityGraphDataModule(pl.LightningDataModule):
             stage: The stage for which to set up the data ('fit' or 'test').
         """
         if stage == "fit" or stage is None:
+            train_path = Path(self.hparams.train_file)
             full_dataset = ReachabilityGraphInMemoryDataset(
-                self.hparams.root, self.hparams.train_file, self.hparams.label_to_predict
+                root=self.hparams.root,
+                raw_data_dir=train_path.parent,
+                raw_file_name=train_path.name,
+                label_to_predict=self.hparams.label_to_predict,
             )
             train_size = int(len(full_dataset) * (1 - self.hparams.val_split))
             val_size = len(full_dataset) - train_size
@@ -76,8 +81,12 @@ class ReachabilityGraphDataModule(pl.LightningDataModule):
             self._scale_dataset(self.val_dataset)
 
         if stage == "test" or stage is None:
+            test_path = Path(self.hparams.test_file)
             self.test_dataset = ReachabilityGraphInMemoryDataset(
-                self.hparams.root, self.hparams.test_file, self.hparams.label_to_predict
+                root=self.hparams.root,
+                raw_data_dir=test_path.parent,
+                raw_file_name=test_path.name,
+                label_to_predict=self.hparams.label_to_predict,
             )
             if self.label_scaler:
                 self._scale_dataset(self.test_dataset)

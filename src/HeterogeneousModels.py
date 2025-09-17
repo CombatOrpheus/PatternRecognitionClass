@@ -230,6 +230,9 @@ class BaseHeteroGNN(LightningSPNModule, ABC):
             if "node_type_dict" in batch:
                 extra_args["node_type_dict"] = batch.node_type_dict
 
+            if "node_type_dict" in batch and "edge_type_dict" in batch:
+                extra_args["node_type"] = batch.node_type_dict
+                extra_args["edge_type"] = batch.edge_type_dict
             x_dict = conv(x_dict, batch.edge_index_dict, edge_attr_dict=batch.edge_attr_dict, **extra_args)
             x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
 
@@ -251,6 +254,7 @@ class RGAT_SPN_Model(BaseHeteroGNN):
         num_heads: int,
         num_layers: int,
         edge_dim: int,
+        num_relations: int,
         **kwargs,
     ):
         """Initializes the RGAT_SPN_Model.
@@ -263,6 +267,7 @@ class RGAT_SPN_Model(BaseHeteroGNN):
             num_heads: The number of attention heads in the RGAT layers.
             num_layers: The number of GNN layers.
             edge_dim: The dimension of edge features.
+            num_relations: The number of relation types.
             **kwargs: Additional keyword arguments for the base class.
         """
         super().__init__(**kwargs)
@@ -280,78 +285,9 @@ class RGAT_SPN_Model(BaseHeteroGNN):
                     rel: RGATConv(
                         in_channels=(in_channels[rel[0]], in_channels[rel[2]]),
                         out_channels=self.hparams.hidden_channels,
-                        num_heads=self.hparams.num_heads,
+                        heads=self.hparams.num_heads,
                         edge_dim=self.hparams.edge_dim,
-                        add_self_loops=False,
-                    )
-                    for rel in [("place", "to", "transition"), ("transition", "to", "place")]
-                },
-                aggr="sum",
-            )
-            self.convs.append(conv)
-            in_channels = {key: layer_output_dim for key in in_channels.keys()}
-
-        self.lin = ModuleDict({nt: Linear(layer_output_dim, self.hparams.out_channels) for nt in self.node_types})
-
-
-class HEAT_SPN_Model(BaseHeteroGNN):
-    """An SPN evaluation model using Heterogeneous Edge-Attention Transformer (HEAT) layers.
-
-    This model leverages HEATConv, which is suitable for graphs with varied
-    node and edge types and their features.
-    """
-
-    def __init__(
-        self,
-        in_channels_dict: Dict[str, int],
-        hidden_channels: int,
-        out_channels: int,
-        num_layers: int,
-        num_heads: int,
-        edge_dim: int,
-        num_node_types: int,
-        num_edge_types: int,
-        node_type_emb_dim: int,
-        edge_type_emb_dim: int,
-        **kwargs,
-    ):
-        """Initializes the HEAT_SPN_Model.
-
-        Args:
-            in_channels_dict: A dictionary mapping node types to their input
-                feature dimensions.
-            hidden_channels: The number of hidden channels in the GNN layers.
-            out_channels: The number of output channels (prediction dimension).
-            num_layers: The number of GNN layers.
-            num_heads: The number of attention heads in the HEAT layers.
-            edge_dim: The dimension of edge features.
-            num_node_types: The total number of node types.
-            num_edge_types: The total number of edge types.
-            node_type_emb_dim: The embedding dimension for node types.
-            edge_type_emb_dim: The embedding dimension for edge types.
-            **kwargs: Additional keyword arguments for the base class.
-        """
-        super().__init__(**kwargs)
-        self.save_hyperparameters()
-        self._create_conv_layers()
-
-    def _create_conv_layers(self) -> None:
-        """Creates the stack of HEAT convolutional layers."""
-        in_channels = self.hparams.in_channels_dict
-        layer_output_dim = self.hparams.hidden_channels
-
-        for i in range(self.hparams.num_layers):
-            conv = HeteroConv(
-                {
-                    rel: HEATConv(
-                        in_channels=(in_channels[rel[0]], in_channels[rel[2]]),
-                        out_channels=self.hparams.hidden_channels,
-                        num_heads=self.hparams.num_heads,
-                        edge_dim=self.hparams.edge_dim,
-                        num_node_types=self.hparams.num_node_types,
-                        num_edge_types=self.hparams.num_edge_types,
-                        node_type_emb_dim=self.hparams.node_type_emb_dim,
-                        edge_type_emb_dim=self.hparams.edge_type_emb_dim,
+                        num_relations=self.hparams.num_relations,
                     )
                     for rel in [("place", "to", "transition"), ("transition", "to", "place")]
                 },

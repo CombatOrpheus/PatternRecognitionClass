@@ -1,0 +1,14 @@
+[io]
+input_dir = "/path/to/input"
+output_dir = "/path/to/output"
+
+[training]
+epochs = 100
+learning_rate = 0.001
+
+[model]
+name = "GCN"
+hidden_channels = 64
+[model.specs]
+layers = 2
+dropout = 0.5

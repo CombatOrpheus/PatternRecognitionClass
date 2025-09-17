@@ -6,11 +6,11 @@ the official torch_geometric.nn.models.MLP for the readout head. It defines
 several GNN architectures for both graph-level and node-level prediction tasks.
 """
 
-from typing import Dict, Any, Literal, List
+from typing import Any, Dict, List, Literal, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.nn import Sequential, Linear, ReLU
+from torch.nn import GINConv, GATConv, Linear, ReLU, Sequential
 from torch_geometric.data import Data
 from torch_geometric.nn import (
     GCNConv,
@@ -18,8 +18,6 @@ from torch_geometric.nn import (
     TAGConv,
     SGConv,
     SSGConv,
-    GATConv,
-    GINConv,
     global_add_pool,
 )
 from torch_geometric.nn.models import MLP
@@ -28,38 +26,14 @@ from src.BaseModels import BaseGNNModule
 
 
 class BaseGNN_SPN_Model(BaseGNNModule):
-    """A base class for GNN models that handles common functionality.
+    """A base class for Homogeneous GNN models.
 
-    This includes metric instantiation, optimizer configuration, and the basic
-    training, validation, and test step logic. Subclasses are expected to
-    implement the `_common_step` method.
+    This class provides shared utilities like the GNN layer factory and the
+    common loss calculation method.
     """
 
-    def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5, metrics: Dict[str, List[str]] = None):
-        """Initializes the BaseGNN_SPN_Model.
-
-        Args:
-            learning_rate: The learning rate for the optimizer.
-            weight_decay: The weight decay for the optimizer.
-            metrics: A dictionary specifying which metrics to use for each split.
-        """
-        super().__init__(learning_rate, weight_decay, metrics)
-
-
     def _get_gnn_layer(self, name: str, in_dim: int, out_dim: int) -> torch.nn.Module:
-        """Factory function to create a GNN layer based on its name.
-
-        Args:
-            name: The name of the GNN operator.
-            in_dim: The input dimension.
-            out_dim: The output dimension.
-
-        Returns:
-            A GNN layer module.
-
-        Raises:
-            ValueError: If the GNN operator name is not supported.
-        """
+        """Factory function to create a GNN layer based on its name."""
         name = name.lower()
         if name == "gcn":
             return GCNConv(in_dim, out_dim)
@@ -74,13 +48,13 @@ class BaseGNN_SPN_Model(BaseGNNModule):
         else:
             raise ValueError(f"Unsupported GNN operator: {name}")
 
+    def _calculate_loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Calculates the Mean Squared Error loss."""
+        return F.mse_loss(preds, targets)
+
 
 class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
-    """A GNN model for graph-level prediction tasks on SPNs.
-
-    This model applies a stack of GNN layers, followed by a global pooling
-    operation and a final MLP to produce a single prediction for the entire graph.
-    """
+    """A GNN model for graph-level prediction tasks on SPNs."""
 
     def __init__(
         self,
@@ -94,24 +68,9 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         weight_decay: float = 1e-5,
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
-        metrics: Dict[str, List[str]] = None,
+        metrics_config: Dict[str, List[str]] = None,
     ):
-        """Initializes the GraphGNN_SPN_Model.
-
-        Args:
-            node_features_dim: The dimension of node features.
-            hidden_dim: The dimension of the hidden layers.
-            out_channels: The dimension of the output.
-            num_layers: The number of GNN layers.
-            gnn_operator_name: The name of the GNN operator to use.
-            num_layers_mlp: The number of layers in the output MLP.
-            learning_rate: The learning rate for the optimizer.
-            weight_decay: The weight decay for the optimizer.
-            gnn_k_hops: The number of hops for GNNs like TAGConv.
-            gnn_alpha: The alpha parameter for SSGConv.
-            metrics: A dictionary specifying which metrics to use for each split.
-        """
-        super().__init__(learning_rate, weight_decay, metrics)
+        super().__init__(learning_rate, weight_decay, metrics_config)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -127,15 +86,8 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
             act="relu",
         )
 
-    def forward(self, batch: Data) -> torch.Tensor:
-        """The forward pass of the model.
-
-        Args:
-            batch: The data batch.
-
-        Returns:
-            The prediction tensor for the graph.
-        """
+    def forward(self, batch: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """The forward pass of the model."""
         x, edge_index, edge_attr, batch_map = (batch.x, batch.edge_index, batch.edge_attr, batch.batch)
         edge_weight = edge_attr.squeeze(-1) if edge_attr is not None and edge_attr.dim() > 1 else edge_attr
 
@@ -144,42 +96,18 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
             x = F.leaky_relu(x)
 
         embedding = global_add_pool(x, batch_map)
-        prediction = self.output_mlp(embedding)
+        preds = self.output_mlp(embedding)
+        preds = preds.squeeze(-1) if self.hparams.out_channels == 1 else preds
 
-        return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
+        targets = batch.y.float()
+        if preds.shape != targets.shape:
+            raise ValueError(f"Shape mismatch: preds={preds.shape}, targets={targets.shape}")
 
-    def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
-        """The common step for training, validation, and testing.
-
-        Args:
-            batch: The data batch.
-            prefix: The prefix for logging.
-
-        Returns:
-            The loss for the batch.
-        """
-        y_pred = self(batch)
-        y_true = batch.y.float()
-
-        if y_pred.shape != y_true.shape:
-            raise ValueError(f"Shape mismatch: y_pred={y_pred.shape}, y_true={y_true.shape}")
-
-        loss = F.mse_loss(y_pred, y_true)
-        self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch.num_graphs)
-
-        metrics = getattr(self, f"{prefix}_metrics")
-        metrics.update(y_pred, y_true)
-        self.log_dict({f"{prefix}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
-
-        return loss
+        return preds, targets
 
 
 class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
-    """A GNN model for node-level prediction tasks on SPNs.
-
-    This model applies a stack of GNN layers and a final MLP to produce a
-    prediction for each node in the graph.
-    """
+    """A GNN model for node-level prediction tasks on SPNs."""
 
     def __init__(
         self,
@@ -193,24 +121,9 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         weight_decay: float = 1e-5,
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
-        metrics: Dict[str, List[str]] = None,
+        metrics_config: Dict[str, List[str]] = None,
     ):
-        """Initializes the NodeGNN_SPN_Model.
-
-        Args:
-            node_features_dim: The dimension of node features.
-            hidden_dim: The dimension of the hidden layers.
-            out_channels: The dimension of the output.
-            num_layers: The number of GNN layers.
-            gnn_operator_name: The name of the GNN operator to use.
-            num_layers_mlp: The number of layers in the output MLP.
-            learning_rate: The learning rate for the optimizer.
-            weight_decay: The weight decay for the optimizer.
-            gnn_k_hops: The number of hops for GNNs like TAGConv.
-            gnn_alpha: The alpha parameter for SSGConv.
-            metrics: A dictionary specifying which metrics to use for each split.
-        """
-        super().__init__(learning_rate, weight_decay, metrics)
+        super().__init__(learning_rate, weight_decay, metrics_config)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -226,15 +139,8 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
             act="relu",
         )
 
-    def forward(self, batch: Data) -> torch.Tensor:
-        """The forward pass of the model.
-
-        Args:
-            batch: The data batch.
-
-        Returns:
-            The prediction tensor for the nodes.
-        """
+    def forward(self, batch: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """The forward pass of the model."""
         x, edge_index, edge_attr = batch.x, batch.edge_index, batch.edge_attr
         edge_weight = edge_attr.squeeze(-1) if edge_attr is not None and edge_attr.dim() > 1 else edge_attr
 
@@ -242,58 +148,32 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
             x = conv(x, edge_index, edge_weight=edge_weight)
             x = F.leaky_relu(x)
 
-        prediction = self.output_mlp(x)
-        return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
+        preds_raw = self.output_mlp(x)
+        preds_raw = preds_raw.squeeze(-1) if self.hparams.out_channels == 1 else preds_raw
 
-    def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
-        """The common step for training, validation, and testing.
-
-        This step handles the logic for node-level predictions by masking the
-        output based on the node type (place or transition).
-
-        Args:
-            batch: The data batch.
-            prefix: The prefix for logging.
-
-        Returns:
-            The loss for the batch.
-        """
-        y_pred_raw = self(batch)
-        y_true = batch.y.float()
-
+        # --- Masking logic for node-level predictions ---
+        targets = batch.y.float()
         place_mask = batch.x[:, 0].bool()
         transition_mask = batch.x[:, 1].bool()
 
-        if place_mask.sum() == y_true.size(0):
-            y_pred = y_pred_raw[place_mask]
-        elif transition_mask.sum() == y_true.size(0):
-            y_pred = y_pred_raw[transition_mask]
+        if place_mask.sum() == targets.size(0):
+            preds = preds_raw[place_mask]
+        elif transition_mask.sum() == targets.size(0):
+            preds = preds_raw[transition_mask]
         else:
             raise ValueError(
-                "Node-level prediction shape mismatch: "
-                f"Ground truth labels ({y_true.size(0)}) does not match "
-                f"places ({place_mask.sum()}) or transitions ({transition_mask.sum()})."
+                f"Node-level prediction shape mismatch: Ground truth labels ({targets.size(0)}) "
+                f"does not match places ({place_mask.sum()}) or transitions ({transition_mask.sum()})."
             )
 
-        if y_pred.shape != y_true.shape:
-            raise ValueError(f"Final shape mismatch: y_pred={y_pred.shape}, y_true={y_true.shape}")
+        if preds.shape != targets.shape:
+            raise ValueError(f"Final shape mismatch: preds={preds.shape}, targets={targets.shape}")
 
-        loss = F.mse_loss(y_pred, y_true)
-        self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch.num_graphs)
-
-        metrics = getattr(self, f"{prefix}_metrics")
-        metrics.update(y_pred, y_true)
-        self.log_dict({f"{prefix}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
-
-        return loss
+        return preds, targets
 
 
 class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
-    """A GNN model with a predefined sequence of GAT, GCN, and GIN layers.
-
-    This model is designed for graph-level prediction and experiments with a
-    fixed, mixed-architecture of different GNN operators.
-    """
+    """A GNN model with a predefined sequence of GAT, GCN, and GIN layers."""
 
     def __init__(
         self,
@@ -301,43 +181,18 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         hidden_dim: int,
         out_channels: int,
         num_layers_mlp: int = 2,
-        heads: int = 4,  # Heads for the GAT layer
+        heads: int = 4,
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-5,
-        metrics: Dict[str, List[str]] = None,
+        metrics_config: Dict[str, List[str]] = None,
     ):
-        """Initializes the MixedGNN_SPN_Model.
-
-        Args:
-            node_features_dim: The dimension of node features.
-            hidden_dim: The dimension of the hidden layers.
-            out_channels: The dimension of the output.
-            num_layers_mlp: The number of layers in the output MLP.
-            heads: The number of attention heads for the GAT layer.
-            learning_rate: The learning rate for the optimizer.
-            weight_decay: The weight decay for the optimizer.
-            metrics: A dictionary specifying which metrics to use for each split.
-        """
-        super().__init__(learning_rate, weight_decay, metrics)
+        super().__init__(learning_rate, weight_decay, metrics_config)
         self.save_hyperparameters()
 
-        # Layer 1: GATConv
         self.conv1 = GATConv(node_features_dim, hidden_dim, heads=heads, dropout=0.6)
-
-        # Layer 2: GCNConv
-        # Input dimension must match the output of the GAT layer (hidden_dim * heads)
         self.conv2 = GCNConv(hidden_dim * heads, hidden_dim)
-
-        # Layer 3: GINConv
-        # GINConv requires a simple MLP for its transformations
-        gin_mlp = Sequential(
-            Linear(hidden_dim, hidden_dim * 2),
-            ReLU(),
-            Linear(hidden_dim * 2, hidden_dim),
-        )
+        gin_mlp = Sequential(Linear(hidden_dim, hidden_dim * 2), ReLU(), Linear(hidden_dim * 2, hidden_dim))
         self.conv3 = GINConv(gin_mlp)
-
-        # Final MLP readout head
         self.output_mlp = MLP(
             in_channels=hidden_dim,
             hidden_channels=hidden_dim,
@@ -346,51 +201,22 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
             act="relu",
         )
 
-    def forward(self, batch: Data) -> torch.Tensor:
-        """The forward pass of the model.
-
-        Args:
-            batch: The data batch.
-
-        Returns:
-            The prediction tensor for the graph.
-        """
+    def forward(self, batch: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """The forward pass of the model."""
         x, edge_index, batch_map = batch.x, batch.edge_index, batch.batch
 
-        # Apply layers sequentially with activations
         x = F.dropout(x, p=0.6, training=self.training)
         x = F.elu(self.conv1(x, edge_index))
         x = F.dropout(x, p=0.6, training=self.training)
         x = F.leaky_relu(self.conv2(x, edge_index))
         x = F.leaky_relu(self.conv3(x, edge_index))
 
-        # Global pooling and final prediction
         embedding = global_add_pool(x, batch_map)
-        prediction = self.output_mlp(embedding)
+        preds = self.output_mlp(embedding)
+        preds = preds.squeeze(-1) if self.hparams.out_channels == 1 else preds
 
-        return prediction.squeeze(-1) if self.hparams.out_channels == 1 else prediction
+        targets = batch.y.float()
+        if preds.shape != targets.shape:
+            raise ValueError(f"Shape mismatch: preds={preds.shape}, targets={targets.shape}")
 
-    def _common_step(self, batch: Data, prefix: str) -> torch.Tensor:
-        """The common step, identical to GraphGNN_SPN_Model's common step.
-
-        Args:
-            batch: The data batch.
-            prefix: The prefix for logging.
-
-        Returns:
-            The loss for the batch.
-        """
-        y_pred = self(batch)
-        y_true = batch.y.float()
-
-        if y_pred.shape != y_true.shape:
-            raise ValueError(f"Shape mismatch: y_pred={y_pred.shape}, y_true={y_true.shape}")
-
-        loss = F.mse_loss(y_pred, y_true)
-        self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch.num_graphs)
-
-        metrics = getattr(self, f"{prefix}_metrics")
-        metrics.update(y_pred, y_true)
-        self.log_dict({f"{prefix}/{k}": v for k, v in metrics.items()}, on_step=False, on_epoch=True)
-
-        return loss
+        return preds, targets

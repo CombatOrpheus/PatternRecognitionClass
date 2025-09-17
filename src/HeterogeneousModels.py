@@ -12,24 +12,64 @@ from torch.nn import ModuleDict, ModuleList
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import HeteroConv, Linear, RGATConv, HEATConv
 from torchmetrics import MetricCollection
+from torchmetrics.regression import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2Score,
+    MeanAbsolutePercentageError,
+    ExplainedVariance,
+    SymmetricMeanAbsolutePercentageError,
+)
 
 from src.BaseModels import BaseGNNModule
+from src.CustomMetrics import MaxError, MedianAbsoluteError
 
 
 class LightningSPNModule(BaseGNNModule, ABC):
     """An abstract base class for heterogeneous GNN models for SPNs.
 
     This class extends the BaseGNNModule to handle the specific requirements
-    of heterogeneous graphs, including per-node-type metric tracking.
+    of heterogeneous graphs, including per-node-type metric tracking, by
+    overriding the metric-related hooks.
     """
 
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
+    def __init__(self, metrics_config: Dict[str, List[str]] = None, **kwargs: Any):
+        # This will be set by the subclass, but we provide a default
         self.node_types = ["place", "transition"]
-        self._initialize_per_node_type_metrics()
+        self.metrics_config = metrics_config or {
+            "train": ["mae"],
+            "val": ["mae", "rmse", "r2", "medae"],
+            "test": ["mae", "rmse", "r2", "mape", "medae", "explainedvariance", "smape", "maxerror"],
+        }
+        super().__init__(**kwargs)
 
-    def _initialize_per_node_type_metrics(self):
-        """Initializes metrics for each node type and registers them."""
+    def _get_metric_class(self, metric_name: str) -> Any:
+        """Returns the metric class for a given metric name."""
+        metric_map = {
+            "mae": MeanAbsoluteError,
+            "mse": MeanSquaredError,
+            "rmse": lambda: MeanSquaredError(squared=False),
+            "r2": R2Score,
+            "mape": MeanAbsolutePercentageError,
+            "medae": MedianAbsoluteError,
+            "explainedvariance": ExplainedVariance,
+            "smape": SymmetricMeanAbsolutePercentageError,
+            "maxerror": MaxError,
+        }
+        name_lower = metric_name.lower()
+        if name_lower not in metric_map:
+            raise ValueError(f"Unsupported metric: {metric_name}")
+        return metric_map[name_lower]()
+
+    def _initialize_metrics(self):
+        """Initializes both aggregate and per-node-type metrics."""
+        # Initialize aggregate metrics
+        self.metrics = ModuleDict()
+        for split in self.metrics_config:
+            metrics_to_add = {name: self._get_metric_class(name) for name in self.metrics_config[split]}
+            self.metrics[split] = MetricCollection(metrics_to_add)
+
+        # Initialize per-node-type metrics
         self.per_node_type_metrics = ModuleDict()
         for split in self.metrics_config:
             metrics_to_add = {
@@ -50,71 +90,43 @@ class LightningSPNModule(BaseGNNModule, ABC):
                 total_loss += F.mse_loss(y_pred.squeeze(), y_true.float())
         return total_loss if total_loss > 0.0 else torch.tensor(0.0, device=self.device)
 
-    def _update_metrics(self, preds: Dict[str, torch.Tensor], targets: Dict[str, torch.Tensor], split: str):
-        """Updates both aggregate and per-node-type metrics."""
+    def _update_metrics(
+        self, preds: Dict[str, torch.Tensor], targets: Dict[str, torch.Tensor], split: str
+    ):
+        """Overrides the base method to update both aggregate and per-node-type metrics."""
         # Update aggregate metrics
-        agg_preds = torch.cat([p.squeeze() for p in preds.values()])
-        agg_targets = torch.cat([t for t in targets.values()])
-        self.metrics[split].update(agg_preds, agg_targets)
+        agg_preds = torch.cat([p.squeeze() for p in preds.values() if p.numel() > 0])
+        agg_targets = torch.cat([t for t in targets.values() if t.numel() > 0])
+        if agg_preds.numel() > 0:
+            super()._update_metrics(agg_preds, agg_targets, split)
 
         # Update per-node-type metrics
         for node_type, y_pred in preds.items():
             y_true = targets.get(node_type)
-            if y_true is not None:
+            if y_true is not None and y_pred.numel() > 0:
                 for metric_name in self.metrics_config[split]:
                     metric_key = f"{node_type}_{metric_name}"
                     self.per_node_type_metrics[split][metric_key].update(y_pred.squeeze(), y_true)
 
     def _log_and_reset_metrics(self, split: str):
-        """Computes, logs, and resets both aggregate and per-node-type metrics."""
-        # Aggregate metrics
-        computed_metrics = self.metrics[split].compute()
-        self.log_dict({f"{split}/{k}": v for k, v in computed_metrics.items()})
-        self.metrics[split].reset()
+        """Overrides the base method to log and reset both sets of metrics."""
+        # Log and reset aggregate metrics
+        super()._log_and_reset_metrics(split)
 
-        # Per-node-type metrics
+        # Log and reset per-node-type metrics
         computed_per_node = self.per_node_type_metrics[split].compute()
         self.log_dict({f"{split}/{k}": v for k, v in computed_per_node.items()})
         self.per_node_type_metrics[split].reset()
-
-    # --- Override training steps and hooks to handle per-node-type metrics ---
-    def training_step(self, batch: HeteroData, batch_idx: int) -> torch.Tensor:
-        preds, targets = self(batch)
-        loss = self._calculate_loss(preds, targets)
-        self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self._update_metrics(preds, targets, "train")
-        return loss
-
-    def on_train_epoch_end(self):
-        self._log_and_reset_metrics("train")
-
-    def validation_step(self, batch: HeteroData, batch_idx: int):
-        preds, targets = self(batch)
-        loss = self._calculate_loss(preds, targets)
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self._update_metrics(preds, targets, "val")
-
-    def on_validation_epoch_end(self):
-        self._log_and_reset_metrics("val")
-
-    def test_step(self, batch: HeteroData, batch_idx: int):
-        preds, targets = self(batch)
-        loss = self._calculate_loss(preds, targets)
-        self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self._update_metrics(preds, targets, "test")
-
-    def on_test_epoch_end(self):
-        self._log_and_reset_metrics("test")
 
 
 class BaseHeteroGNN(LightningSPNModule):
     """An abstract base class for specific heterogeneous GNN model implementations."""
 
-    def __init__(self, **kwargs: Any):
+    def __init__(self, out_channels: int, **kwargs: Any):
         super().__init__(**kwargs)
-        self.save_hyperparameters()
+        self.save_hyperparameters("out_channels")
         self.convs = ModuleList()
-        self.lin = ModuleDict({nt: Linear(-1, self.hparams.out_channels) for nt in self.node_types})
+        self.lin = ModuleDict({nt: Linear(-1, out_channels) for nt in self.node_types})
 
     @abstractmethod
     def _create_conv_layers(self) -> None:
@@ -125,7 +137,6 @@ class BaseHeteroGNN(LightningSPNModule):
         """The forward pass for the heterogeneous GNN model."""
         x_dict = batch.x_dict
         for conv in self.convs:
-            # Handle HEATConv's extra arguments if needed
             extra_args = {"node_type_dict": batch.node_type_dict} if "node_type_dict" in batch else {}
             x_dict = conv(x_dict, batch.edge_index_dict, edge_attr_dict=batch.edge_attr_dict, **extra_args)
             x_dict = {key: F.leaky_relu(x) for key, x in x_dict.items()}
@@ -172,10 +183,8 @@ class RGAT_SPN_Model(BaseHeteroGNN):
                 for rel in [("place", "to", "transition"), ("transition", "to", "place")]
             }
             self.convs.append(HeteroConv(conv_dict, aggr="sum"))
-            # Update input channels for the next layer
             in_channels = {key: out_dim * num_heads for key in in_channels.keys()}
 
-        # Re-initialize final linear layers with correct input dimension
         self.lin = ModuleDict({nt: Linear(in_channels[nt], self.hparams.out_channels) for nt in self.node_types})
 
 
@@ -220,8 +229,6 @@ class HEAT_SPN_Model(BaseHeteroGNN):
                 for rel in [("place", "to", "transition"), ("transition", "to", "place")]
             }
             self.convs.append(HeteroConv(conv_dict, aggr="sum"))
-            # Update input channels for the next layer
             in_channels = {key: out_dim for key in in_channels.keys()}
 
-        # Re-initialize final linear layers with correct input dimension
         self.lin = ModuleDict({nt: Linear(in_channels[nt], self.hparams.out_channels) for nt in self.node_types})

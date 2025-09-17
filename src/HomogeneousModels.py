@@ -1,16 +1,12 @@
 """This module provides a flexible and modular PyTorch Lightning implementation of
 homogeneous Graph Neural Networks for evaluating Stochastic Petri Nets (SPNs).
-
-This refactored version uses MetricCollection for cleaner metric handling and
-the official torch_geometric.nn.models.MLP for the readout head. It defines
-several GNN architectures for both graph-level and node-level prediction tasks.
 """
 
 from typing import Any, Dict, List, Literal, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.nn import GINConv, GATConv, Linear, ReLU, Sequential
+from torch.nn import GINConv, GATConv, Linear, ReLU, Sequential, ModuleDict
 from torch_geometric.data import Data
 from torch_geometric.nn import (
     GCNConv,
@@ -21,16 +17,59 @@ from torch_geometric.nn import (
     global_add_pool,
 )
 from torch_geometric.nn.models import MLP
+from torchmetrics import MetricCollection
+from torchmetrics.regression import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2Score,
+    MeanAbsolutePercentageError,
+    ExplainedVariance,
+    SymmetricMeanAbsolutePercentageError,
+)
 
 from src.BaseModels import BaseGNNModule
+from src.CustomMetrics import MaxError, MedianAbsoluteError
 
 
 class BaseGNN_SPN_Model(BaseGNNModule):
     """A base class for Homogeneous GNN models.
 
-    This class provides shared utilities like the GNN layer factory and the
-    common loss calculation method.
+    This class provides shared utilities like the GNN layer factory, the
+    common loss calculation method, and the metric initialization logic.
     """
+
+    def __init__(self, metrics_config: Dict[str, List[str]] = None, **kwargs: Any):
+        self.metrics_config = metrics_config or {
+            "train": ["mae"],
+            "val": ["mae", "rmse", "r2", "medae"],
+            "test": ["mae", "rmse", "r2", "mape", "medae", "explainedvariance", "smape", "maxerror"],
+        }
+        super().__init__(**kwargs)
+
+    def _get_metric_class(self, metric_name: str) -> Any:
+        """Returns the metric class for a given metric name."""
+        metric_map = {
+            "mae": MeanAbsoluteError,
+            "mse": MeanSquaredError,
+            "rmse": lambda: MeanSquaredError(squared=False),
+            "r2": R2Score,
+            "mape": MeanAbsolutePercentageError,
+            "medae": MedianAbsoluteError,
+            "explainedvariance": ExplainedVariance,
+            "smape": SymmetricMeanAbsolutePercentageError,
+            "maxerror": MaxError,
+        }
+        name_lower = metric_name.lower()
+        if name_lower not in metric_map:
+            raise ValueError(f"Unsupported metric: {metric_name}")
+        return metric_map[name_lower]()
+
+    def _initialize_metrics(self):
+        """Initializes the metrics for all splits and registers them."""
+        self.metrics = ModuleDict()
+        for split in self.metrics_config:
+            metrics_to_add = {name: self._get_metric_class(name) for name in self.metrics_config[split]}
+            self.metrics[split] = MetricCollection(metrics_to_add)
 
     def _get_gnn_layer(self, name: str, in_dim: int, out_dim: int) -> torch.nn.Module:
         """Factory function to create a GNN layer based on its name."""
@@ -64,13 +103,9 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         num_layers: int,
         gnn_operator_name: Literal["gcn", "cheb", "tag", "sgc", "ssg"] = "gcn",
         num_layers_mlp: int = 1,
-        learning_rate: float = 1e-3,
-        weight_decay: float = 1e-5,
-        gnn_k_hops: int = 3,
-        gnn_alpha: float = 0.1,
-        metrics_config: Dict[str, List[str]] = None,
+        **kwargs: Any,
     ):
-        super().__init__(learning_rate, weight_decay, metrics_config)
+        super().__init__(**kwargs)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -117,13 +152,9 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         num_layers: int,
         gnn_operator_name: Literal["gcn", "cheb", "tag", "sgc", "ssg"] = "gcn",
         num_layers_mlp: int = 1,
-        learning_rate: float = 1e-3,
-        weight_decay: float = 1e-5,
-        gnn_k_hops: int = 3,
-        gnn_alpha: float = 0.1,
-        metrics_config: Dict[str, List[str]] = None,
+        **kwargs: Any,
     ):
-        super().__init__(learning_rate, weight_decay, metrics_config)
+        super().__init__(**kwargs)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -182,11 +213,9 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         out_channels: int,
         num_layers_mlp: int = 2,
         heads: int = 4,
-        learning_rate: float = 1e-3,
-        weight_decay: float = 1e-5,
-        metrics_config: Dict[str, List[str]] = None,
+        **kwargs: Any,
     ):
-        super().__init__(learning_rate, weight_decay, metrics_config)
+        super().__init__(**kwargs)
         self.save_hyperparameters()
 
         self.conv1 = GATConv(node_features_dim, hidden_dim, heads=heads, dropout=0.6)

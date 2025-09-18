@@ -66,6 +66,19 @@ def test_graph_gnn_model_step(graph_level_batch):
     assert loss > 0
 
 
+def test_model_compilation():
+    """Tests that the model is compiled when to_be_compiled=True."""
+    model = GraphGNN_SPN_Model(
+        node_features_dim=4,
+        hidden_dim=16,
+        out_channels=1,
+        num_layers=2,
+        to_be_compiled=True,
+    )
+    model.setup(stage="fit")
+    assert model.forward.__code__.co_name == "compile_wrapper"
+
+
 @pytest.mark.parametrize("gnn_operator", ["gcn", "tag", "sgc", "ssg"])
 def test_node_gnn_model_forward(gnn_operator, node_level_batch):
     """Tests the forward pass of the NodeGNN_SPN_Model."""

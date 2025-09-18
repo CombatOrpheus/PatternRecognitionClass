@@ -41,16 +41,28 @@ class BaseGNN_SPN_Model(pl.LightningModule):
     implement the `_common_step` method.
     """
 
-    def __init__(self, learning_rate: float = 1e-3, weight_decay: float = 1e-5):
+    def __init__(
+        self,
+        learning_rate: float = 1e-3,
+        weight_decay: float = 1e-5,
+        to_be_compiled: bool = False,
+    ):
         """Initializes the BaseGNN_SPN_Model.
 
         Args:
             learning_rate: The learning rate for the optimizer.
             weight_decay: The weight decay for the optimizer.
+            to_be_compiled: Whether to compile the model for optimization.
         """
         super().__init__()
-        self.save_hyperparameters("learning_rate", "weight_decay")
+        self.save_hyperparameters("learning_rate", "weight_decay", "to_be_compiled")
         self._initialize_metrics()
+
+    def setup(self, stage: str) -> None:
+        """Conditionally compiles the model's forward method."""
+        if self.hparams.to_be_compiled:
+            print(f"Compiling the model for stage: {stage}")
+            self.forward = torch.compile(self.forward)
 
     def _initialize_metrics(self):
         """Instantiates regression metrics using MetricCollection for each data split."""
@@ -178,6 +190,7 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
         weight_decay: float = 1e-5,
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
+        to_be_compiled: bool = False,
     ):
         """Initializes the GraphGNN_SPN_Model.
 
@@ -192,8 +205,9 @@ class GraphGNN_SPN_Model(BaseGNN_SPN_Model):
             weight_decay: The weight decay for the optimizer.
             gnn_k_hops: The number of hops for GNNs like TAGConv.
             gnn_alpha: The alpha parameter for SSGConv.
+            to_be_compiled: Whether to compile the model for optimization.
         """
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(learning_rate, weight_decay, to_be_compiled)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -275,6 +289,7 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
         weight_decay: float = 1e-5,
         gnn_k_hops: int = 3,
         gnn_alpha: float = 0.1,
+        to_be_compiled: bool = False,
     ):
         """Initializes the NodeGNN_SPN_Model.
 
@@ -289,8 +304,9 @@ class NodeGNN_SPN_Model(BaseGNN_SPN_Model):
             weight_decay: The weight decay for the optimizer.
             gnn_k_hops: The number of hops for GNNs like TAGConv.
             gnn_alpha: The alpha parameter for SSGConv.
+            to_be_compiled: Whether to compile the model for optimization.
         """
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(learning_rate, weight_decay, to_be_compiled)
         self.save_hyperparameters()
 
         self.convs = torch.nn.ModuleList()
@@ -384,6 +400,7 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
         heads: int = 4,  # Heads for the GAT layer
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-5,
+        to_be_compiled: bool = False,
     ):
         """Initializes the MixedGNN_SPN_Model.
 
@@ -395,8 +412,9 @@ class MixedGNN_SPN_Model(BaseGNN_SPN_Model):
             heads: The number of attention heads for the GAT layer.
             learning_rate: The learning rate for the optimizer.
             weight_decay: The weight decay for the optimizer.
+            to_be_compiled: Whether to compile the model for optimization.
         """
-        super().__init__(learning_rate, weight_decay)
+        super().__init__(learning_rate, weight_decay, to_be_compiled)
         self.save_hyperparameters()
 
         # Layer 1: GATConv

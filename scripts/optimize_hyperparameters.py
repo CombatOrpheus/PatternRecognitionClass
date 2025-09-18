@@ -14,6 +14,7 @@ from typing import List
 import lightning.pytorch as pl
 import optuna
 import torch
+import torch.compiler
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from optuna.integration import PyTorchLightningPruningCallback
@@ -41,6 +42,9 @@ def objective(
     label_scaler: StandardScaler,
     study_name: str,
 ) -> float:
+    # Clear cache before each trial to ensure a clean state
+    torch.compiler.reset()
+
     """The Optuna objective function to be minimized.
 
     This function defines the hyperparameter search space, creates a model and

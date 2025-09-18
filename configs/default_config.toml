@@ -24,6 +24,7 @@ num_workers = 8
 max_epochs = 100
 patience = 5
 val_split = 0.3
+to_be_compiled = false
 
 [optimization]
 n_trials = 100

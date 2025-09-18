@@ -57,6 +57,8 @@ This section contains parameters for training the homogeneous GNN models.
   - Default: `10`
 - `val_split`: The fraction of training data to use for validation.
   - Default: `0.2`
+- `to_be_compiled`: If `true`, the model will be compiled with `torch.compile` for a potential performance boost. This is recommended for modern GPUs but may increase memory usage.
+  - Default: `false`
 
 ## `[optimization]` - Homogeneous Model Optimization
 

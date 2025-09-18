@@ -3,7 +3,7 @@
 [io]
 root = "Processed Data"
 raw_data_dir = "Data"
-train_file = "GridData_DS1_all_data.processed"
+train_file = "GridData_DS4_all_data.processed"
 test_file = "GridData_DS3_all_data.processed"
 val_file = ""
 studies_dir = "optuna_studies"
@@ -14,20 +14,20 @@ output_dir = "results/analysis_plots"
 log_dir = "lightning_logs"
 
 [model]
-label = "average_tokens_per_place"
+label = "average_firing_rates"
 prediction_level = "node"
-gnn_operator = ["cheb"]
+gnn_operator = ["cheb", "gcn", "sgc", "tag", "ssg"]
 
 [training]
-num_runs = 1
+num_runs = 30
 num_workers = 8
-max_epochs = 1
+max_epochs = 100
 patience = 5
 val_split = 0.3
 
 [optimization]
-n_trials = 1
-timeout = 7200
+n_trials = 100
+timeout = 3600
 
 [hetero_model]
 gnn_operator = "rgat"
@@ -44,11 +44,17 @@ timeout = 7200
 study_name = "hetero_gnn_spn_optimization"
 
 [cross_validation]
-datasets = []
+datasets = [
+    "GridData_DS1_all_data.processed",
+    "GridData_DS2_all_data.processed",
+    "GridData_DS5_all_data.processed",
+    "RandData_DS1_train_data.processed",
+    "RandData_DS2_train_data.processed",
+]
 
 [analysis]
-main_metrics = ["test/rmse", "test/mae", "val/rmse"]
-cross_val_metrics = ["test/rmse", "test/mae"]
+main_metrics = ["test/rmse", "test/mae", "test/mape", "val/rmse"]
+cross_val_metrics = ["test/rmse", "test/mae", "test/mape"]
 generate_critical_diagram = true
 generate_performance_complexity_plot = true
 generate_cross_eval_heatmap = true

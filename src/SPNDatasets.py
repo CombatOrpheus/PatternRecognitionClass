@@ -48,16 +48,17 @@ class BaseSPNDataset(InMemoryDataset):
             pre_transform: A function/transform that takes in an object and
                 returns a transformed version.
         """
-        self.raw_data_dir = Path(raw_data_dir)
         self.raw_file_name = Path(raw_file_name)
         self.label_to_predict = label_to_predict
+        # Correctly join the root and raw_data_dir
+        self._raw_data_dir = Path(root) / raw_data_dir
         super().__init__(root, transform, pre_transform)
         self.load(self.processed_paths[0])
 
     @property
     def raw_dir(self) -> str:
         """The directory where the raw data is stored."""
-        return str(self.raw_data_dir)
+        return str(self._raw_data_dir)
 
     @property
     def raw_file_names(self) -> List[str]:

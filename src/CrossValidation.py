@@ -40,18 +40,17 @@ class CrossValidator:
         Returns:
             A list of Path objects for each dataset to be evaluated.
         """
+        base_path = Path(self.config.io.root) / self.config.io.raw_data_dir
         # If a specific list of datasets is provided in the config, use that.
         if self.config.cross_validation.datasets:
-            return [Path(self.config.io.raw_data_dir) / f for f in self.config.cross_validation.datasets]
+            return [base_path / f for f in self.config.cross_validation.datasets]
 
-        # Otherwise, get all files from the raw data directory.
-        raw_data_dir = Path(self.config.io.raw_data_dir)
-        if not raw_data_dir.exists():
-            warnings.warn(f"Raw data directory not found: {raw_data_dir}. Cannot perform cross-validation.")
+        # Otherwise, get all .processed files from the raw data directory.
+        if not base_path.is_dir():
+            warnings.warn(f"Raw data directory not found: {base_path}. Cannot perform cross-validation.")
             return []
 
-        # Return all files, letting the caller handle filtering.
-        return sorted(list(raw_data_dir.iterdir()))
+        return sorted(list(base_path.glob("*.processed")))
 
     def cross_validate_single_model(
         self, model: pl.LightningModule, run_config: argparse.Namespace, run_id: int, seed: int

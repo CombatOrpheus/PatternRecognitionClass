@@ -29,6 +29,7 @@ dependencies = [
     "scipy>=1.16.1",
     "tensorboard>=2.20.0",
     "toml>=0.10.2",
+    "pytest>=8.4.1",
 ]
 
 [[tool.uv.index]]

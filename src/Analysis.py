@@ -43,9 +43,9 @@ class Analysis:
         self.output_dir = (
             self.config.io.output_dir
             / generate_experiment_name(
-                self.config.data.train_file,
-                self.config.data.test_file,
-                self.config.data.label,
+                self.config.io.train_file,
+                self.config.io.test_file,
+                self.config.model.label,
             )
         )
 

@@ -173,7 +173,7 @@ class SPNDataModule(pl.LightningDataModule):
             batch_size=self.hparams.batch_size,
             shuffle=True,
             num_workers=self.hparams.num_workers,
-            drop_last=True,
+            drop_last=False,
         )
 
     def val_dataloader(self) -> DataLoader:

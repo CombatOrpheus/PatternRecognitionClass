@@ -140,15 +140,22 @@ def run_single_training_run(
     Path(best_ckpt_path).rename(final_ckpt_path)
 
     # The `model` object has been updated in-place by the trainer and has the best weights.
+    # Capture validation metrics right after fitting
+    val_metrics = {
+        "final_val_loss": trainer.callback_metrics["val/loss"].item(),
+        "val/rmse": trainer.callback_metrics["val/rmse"].item(),
+        "val/mae": trainer.callback_metrics["val/mae"].item(),
+    }
+
     results = trainer.test(model=model, datamodule=data_module, verbose=False)[0]
     results.update(
         {
             "run_id": run_id,
             "seed": seed,
             "final_train_loss": trainer.callback_metrics.get("train/loss_epoch"),
-            "final_val_loss": trainer.callback_metrics.get("val/loss", torch.tensor(-1.0)).item(),
         }
     )
+    results.update(val_metrics)
     return model, results
 
 
